@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 PROJECT_NAME='my-ci1'
-GIT_REPO_PATH='my-ci1'
-CI_SERVER='myciserver.com'
+GIT_REPO_PATH='/Users/chenjf/projects/my-ci1'
+CI_SERVER='detachmentsoft.top'
 CI_USER=''
 CI_PASSWORD=''
 set -eou pipefail
@@ -29,9 +29,9 @@ fi
 
 
 if ! getent passwd "$CI_USER" >/dev/null 2>&1; then
-  sudo useradd "$CI_USER"
+  sudo useradd -m "$CI_USER"
   printf "%s\n%s\n" "${CI_PASSWORD}" "${CI_PASSWORD}"| sudo passwd "$CI_USER"
-  printf "%s\n" "$CI_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/90-cloud-init-users > /dev/null
+  # printf "%s\n" "$CI_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-users > /dev/null
 else
   printf "%s\n" "$CI_USER already exists, skip creating user"
   printf "%s\n" "Please make sure the user $CI_USER is the EXACT user you want to use to do the CI job."
@@ -45,6 +45,7 @@ fi
 
 
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.git
+sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.build
 sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git init --bare
 
 
@@ -57,23 +58,27 @@ sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git init --bare
 # only listed users can push to the branch dedicated for =CI= build.
 
 
-sudo -u $CI_USER cat << _EOFPreReceive > /home/$CI_USER/$PROJECT_NAME.git/.hooks/pre-receive
+cat << _EOFPreReceive | sudo -u $CI_USER tee /home/$CI_USER/$PROJECT_NAME.git/hooks/pre-receive > /dev/null
+#!/usr/bin/env bash
+
 # Git Hook for ban on push to main branch
-changedBranch=$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
+changedBranch=\$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
 # Add allowed users to push to main
 allowedUsers=($CI_USER)
-if [ "$changedBranch" == "main" ]; then
-  if [[ ${allowedUsers[*]} ~= $USER ]]; then
+if [ "\$changedBranch" == "main" ]; then
+  if [[ \${allowedUsers[*]} =~ \$USER ]]; then
+    true
+  else
     echo "You are not allowed push changes in the main branch, only $CI_USER can do it"
     exit 1
   fi
 fi
 _EOFPreReceive
-sudo -u $CI_USER chmod 755 /home/$CI_USER/$PROJECT_NAME.git/.hooks/pre-receive
+sudo -u $CI_USER chmod 755 /home/$CI_USER/$PROJECT_NAME.git/hooks/pre-receive
 
 
 
-# - add the =post-reveive= hook which will checkout the work tree and call the =ci= script ::
+# - add the =post-receive= hook which will checkout the work tree and call the =ci= script ::
 # If the dedicated =CI= build branch *main* has been pushed to the =CI= machine
 # by a authorized user, the =CI= build flow will be kicked off.
 
@@ -83,25 +88,28 @@ sudo -u $CI_USER chmod 755 /home/$CI_USER/$PROJECT_NAME.git/.hooks/pre-receive
 # the real =CI= work.
 
 
-sudo -u $CI_USER cat << _EOFPostReceive > /home/$CI_USER/$PROJECT_NAME.git/.hooks/post-receive
+cat << _EOFPostReceive | sudo -u $CI_USER tee /home/$CI_USER/$PROJECT_NAME.git/hooks/post-receive > /dev/null
+#!/usr/bin/env bash
+
 target_branch="main"
-working_tree="$PROJECT_NAME.build"
+working_tree="/home/$CI_USER/$PROJECT_NAME.build"
 while read -r oldrev newrev refname
 do
-  branch=$(git rev-parse --symbolic --abbrev-ref "$refname")
-  if [ -n "$branch" ] && [ "$target_branch" = "$branch" ]; then
-    mkdir -p "$working_tree"
-    GIT_WORK_TREE=$working_tree git checkout $target_branch -f
-    NOW=$(date +"%Y%m%d-%H%M%S")
-    git tag "release_$NOW" $target_branch
+  branch=\$(git rev-parse --symbolic --abbrev-ref "\$refname")
+  if [ -n "\$branch" ] && [ "\$target_branch" = "\$branch" ]; then
+    mkdir -p "\$working_tree"
+    GIT_WORK_TREE=\$working_tree git checkout \$target_branch -f
+    NOW=\$(date +"%Y%m%d-%H%M%S")
+    git tag "release_\$NOW" \$target_branch
     echo " /==============================="
     echo " | RESTORE WORKING TREE COMPLETED"
-    echo " | Target branch: $target_branch"
-    echo " | Target folder: $working_tree"
-    echo " | Tag name : release_$NOW"
+    echo " | Target branch: \$target_branch"
+    echo " | Target folder: \$working_tree"
+    echo " | Tag name : release_\$NOW"
     echo " | Now kick off the CI"
     echo " \=============================="
-    "$working_tree"/.poormanscicd/ci.sh
+    "\$working_tree"/.poormanscicd/ci.sh "\$working_tree" "\$branch" "\$working_tree"/ci-artifact-$PROJECT_NAME.tar.gz > "\$working_tree"/ci.log 2>&1
   fi
 done
 _EOFPostReceive
+sudo -u $CI_USER chmod 755 /home/$CI_USER/$PROJECT_NAME.git/hooks/post-receive
