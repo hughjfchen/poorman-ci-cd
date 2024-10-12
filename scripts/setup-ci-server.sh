@@ -110,7 +110,7 @@ do
     echo " | Tag name : release_\$NOW"
     echo " | Now kick off the CI"
     echo " \=============================="
-    "\$working_tree"/.poormanscicd/ci.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$build_output"/ci.log 2>&1
+    "\$working_tree"/.poormanscicd/ci.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$build_output"/ci.log 2>&1 &
   fi
 done
 _EOFPostReceive

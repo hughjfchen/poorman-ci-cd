@@ -77,7 +77,7 @@ do
     echo " | Tag name : release_\$NOW"
     echo " | Now kick off the CD"
     echo " \=============================="
-    "\$working_tree"/.poormanscicd/cd.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$deploy_output"/cd.log 2>&1
+    "\$working_tree"/.poormanscicd/cd.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$deploy_output"/cd.log 2>&1 &
   fi
 done
 _EOFPostReceive
