@@ -345,8 +345,15 @@ set -eou pipefail
 - copy the generated =ssh= key to the CI/CD machine so that the user can login without password ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
-printf "%s\n" "$CI_PASSWORD" | ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER "$CI_USER"@"$CI_SERVER"
-printf "%s\n" "$CD_PASSWORD" | ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER "$CD_USER"@"$CD_SERVER"
+# the printf tips does not work any more because ssh command
+# read input from terminal directory instead from stdin
+if type -p sshpass > /dev/null 2>&1; then
+  sshpass -p "$CI_PASSWORD" ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER "$CI_USER"@"$CI_SERVER"
+  sshpass -p "$CD_PASSWORD" ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER "$CD_USER"@"$CD_SERVER"
+else
+  ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER "$CI_USER"@"$CI_SERVER"
+  ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER "$CD_USER"@"$CD_SERVER"
+if
 #+end_src
 
 - config =ssh= config to make sure the dedicated user login with the generated key to the CI/CD machine ::
