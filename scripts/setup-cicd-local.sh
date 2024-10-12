@@ -80,8 +80,6 @@ set -eo pipefail
 
 remote="\$1"
 url="\$2"
-echo "remotename: \$remote"
-echo "remoteurl: \$url"
 
 if [[ "\$remote" = "cd-at-"* ]]; then
 declare -A RELATED_CI_SERVERS
@@ -89,20 +87,29 @@ declare -A RELATED_CI_SERVERS
 RELATED_CI_SERVERS["$CD_SERVER"]="$CI_SERVER"
 
 target_branch="main"
-while read -r localref localoid remoteref remoteoid
+ci_build_output="/home/$CI_USER/$PROJECT_NAME.build"
+cd_build_output="/home/$CD_USER/$PROJECT_NAME.build"
+cd_deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
+while read -r localref localsha remoteref remotesha
 do
   echo "localref: \$localref"
-  echo "localoid: \$localoid"
+  echo "localsha: \$localsha"
   echo "remoteref: \$remoteref"
-  echo "remoteoid: \$remoteoid"
+  echo "remotesha: \$remotesha"
   branch=\$(git rev-parse --symbolic --abbrev-ref "\$remoteref")
   if [ -n "\$branch" ] && [ "\$target_branch" = "\$branch" ]; then
     THE_CD_SERVER=\$(echo "\$url" | cut -d'@' -f2 | cut -d':' -f1)
     THE_CI_SERVER=\${RELATED_CI_SERVERS["\$THE_CD_SERVER"]}
-    TEMP_CI_ARTIFACT=\$(mktemp -t ci-artifact-$PROJECT_NAME.tar.gz.xxxx)
-    scp $CI_USER@\$THE_CI_SERVER:/home/$CI_USER/$PROJECT_NAME.build/ci-artifact-$PROJECT_NAME.tar.gz \$TEMP_CI_ARTIFACT
-    scp \$TEMP_CI_ARTIFACT $CD_USER@\$THE_CD_SERVER:/home/$CD_USER/$PROJECT_NAME.deploy/ci-artifact-$PROJECT_NAME.tar.gz
-    echo "build artifact is available as /home/$CD_USER/$PROJECT_NAME.deploy/ci-artifact-$PROJECT_NAME.tar.gz on the machine \$THE_CD_SERVER"
+    TEMP_CI_ARTIFACT=\$(mktemp -d -t ci-artifact-$PROJECT_NAME.xxxx)
+    if ssh ${CI_USER}@\$THE_CI_SERVER test -f \$ci_build_output/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz; then
+       scp $CI_USER@\$THE_CI_SERVER:\$ci_build_output/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz \$TEMP_CI_ARTIFACT/
+       scp \$TEMP_CI_ARTIFACT/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz $CD_USER@\$THE_CD_SERVER:\$cd_build_output/
+       rm -fr \$TEMP_CI_ARTIFACT
+       echo "build artifact is available as \$cd_build_output/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz on the machine \$THE_CD_SERVER"
+    else
+       echo "cannot found the CI artifact for main branch revision \$localsha on the CI server \$THE_CI_SERVER, abort deploy"
+       exit 111
+    fi
   fi
 done
 fi
@@ -114,20 +121,26 @@ chmod 755 $GIT_REPO_PATH/.git/hooks/pre-push
 [ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
 
 cat << _FOLLOW_CI_LOG_SCRIPT > $GIT_REPO_PATH/.poormanscicd/follow-ci-log-$CI_SERVER.sh
-ssh $CI_USER@$CI_SERVER tail -f /home/$CI_USER/$PROJECT_NAME.build/ci.log
+ci_build_output="/home/$CI_USER/$PROJECT_NAME.build"
+ssh $CI_USER@$CI_SERVER tail -f \$ci_build_output/ci.log
 _FOLLOW_CI_LOG_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/follow-ci-log-$CI_SERVER.sh
 cat << _FOLLOW_CD_LOG_SCRIPT > $GIT_REPO_PATH/.poormanscicd/follow-cd-log-$CD_SERVER.sh
-ssh $CD_USER@$CD_SERVER tail -f /home/$CD_USER/$PROJECT_NAME.deploy/cd.log
+cd_deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
+ssh $CD_USER@$CD_SERVER tail -f \$cd_deploy_output/cd.log
 _FOLLOW_CD_LOG_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/follow-cd-log-$CD_SERVER.sh
 
+[ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
+
 cat << _VIEW_CI_LOG_SCRIPT > $GIT_REPO_PATH/.poormanscicd/view-ci-log-$CI_SERVER.sh
-ssh $CI_USER@$CI_SERVER cat /home/$CI_USER/$PROJECT_NAME.build/ci.log
+ci_build_output="/home/$CI_USER/$PROJECT_NAME.build"
+ssh $CI_USER@$CI_SERVER cat \$ci_build_output/ci.log
 _VIEW_CI_LOG_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/view-ci-log-$CI_SERVER.sh
 cat << _VIEW_CD_LOG_SCRIPT > $GIT_REPO_PATH/.poormanscicd/view-cd-log-$CD_SERVER.sh
-ssh $CD_USER@$CD_SERVER cat /home/$CD_USER/$PROJECT_NAME.deploy/cd.log
+cd_deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
+ssh $CD_USER@$CD_SERVER cat \$cd_deploy_output/cd.log
 _VIEW_CD_LOG_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/view-cd-log-$CD_SERVER.sh
 

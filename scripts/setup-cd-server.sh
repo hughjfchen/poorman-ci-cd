@@ -25,13 +25,15 @@ if ! getent passwd "$CD_USER" >/dev/null 2>&1; then
   sudo useradd -m "$CD_USER"
 
   printf "%s\n%s\n" "$CD_PASSWORD" "$CD_PASSWORD" | sudo passwd "$CD_USER"
-  # printf "%s\n" "$CD_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-users > /dev/null
+  printf "%s\n" "$CD_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CD_USER} > /dev/null
 else
   printf "%s\n" "$CD_USER already exists, skip creating user"
   printf "%s\n" "Please make sure the user $CD_USER is the EXACT user you want to use to do the CD job."
 fi
 
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.git
+sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.work
+sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.build
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.deploy
 sudo -u $CD_USER git -C /home/$CD_USER/$PROJECT_NAME.git init --bare
 
@@ -46,7 +48,7 @@ if [ "\$changedBranch" == "main" ]; then
   if [[ \${allowedUsers[*]} =~ \$USER ]]; then
     true
   else
-    echo "You are not allowed push changes in the main branch, only $CD_USER can do it"
+    echo "You are not allowed to push changes to the main branch, only $CD_USER can do it"
     exit 1
   fi
 fi
@@ -57,7 +59,9 @@ cat << _EOFPostReceive | sudo -u $CD_USER tee /home/$CD_USER/$PROJECT_NAME.git/h
 #!/usr/bin/env bash
 
 target_branch="main"
-working_tree="/home/$CD_USER/$PROJECT_NAME.deploy"
+working_tree="/home/$CD_USER/$PROJECT_NAME.work"
+build_output="/home/$CD_USER/$PROJECT_NAME.build"
+deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
 while read -r oldrev newrev refname
 do
   branch=\$(git rev-parse --symbolic --abbrev-ref "\$refname")
@@ -73,7 +77,7 @@ do
     echo " | Tag name : release_\$NOW"
     echo " | Now kick off the CD"
     echo " \=============================="
-    "\$working_tree"/.poormanscicd/cd.sh "\$working_tree" "\$branch" "\$working_tree"/ci-artifact-$PROJECT_NAME.tar.gz > "\$working_tree"/cd.log 2>&1
+    "\$working_tree"/.poormanscicd/cd.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$deploy_output"/cd.log 2>&1
   fi
 done
 _EOFPostReceive
