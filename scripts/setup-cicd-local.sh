@@ -99,10 +99,6 @@ cd_build_output="/home/$CD_USER/$PROJECT_NAME.build"
 cd_deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
 while read -r localref localsha remoteref remotesha
 do
-  echo "localref: \$localref"
-  echo "localsha: \$localsha"
-  echo "remoteref: \$remoteref"
-  echo "remotesha: \$remotesha"
   branch=\$(git rev-parse --symbolic --abbrev-ref "\$remoteref")
   if [ -n "\$branch" ] && [ "\$target_branch" = "\$branch" ]; then
     THE_CD_SERVER=\$(echo "\$url" | cut -d'@' -f2 | cut -d':' -f1)
@@ -114,7 +110,9 @@ do
        rm -fr \$TEMP_CI_ARTIFACT
        echo "build artifact is available as \$cd_build_output/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz on the machine \$THE_CD_SERVER"
     else
-       echo "cannot found the CI artifact for main branch revision \$localsha on the CI server \$THE_CI_SERVER, abort deploy"
+       echo "cannot found the CI artifact for main branch revision \$localsha on the CI server \$THE_CI_SERVER."
+       echo "please run the command 'git push ci-at-\$THE_CI_SERVER \$branch' to build the project before you can deploy."
+       echo "abort deployment."
        exit 111
     fi
   fi
