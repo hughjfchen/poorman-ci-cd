@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-PROJECT_NAME='my-ci1'
-GIT_REPO_PATH='/Users/chenjf/projects/my-ci1'
-CD_SERVER='detachmentsoft.top'
+PROJECT_NAME='detachment-system'
+GIT_REPO_PATH='/Users/chenjf/projects/detachment-system'
+CD_SERVER='detachment-soft.top'
 CD_USER=''
 CD_PASSWORD=''
 set -eou pipefail
@@ -77,7 +77,7 @@ do
     echo " | Tag name : release_\$NOW"
     echo " | Now kick off the CD"
     echo " \=============================="
-    "\$working_tree"/.poormanscicd/cd.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$deploy_output"/cd.log 2>&1 &
+    nohup "\$working_tree"/.poormanscicd/cd.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$deploy_output"/cd.log 2>&1 &
   fi
 done
 _EOFPostReceive

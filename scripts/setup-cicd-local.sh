@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-PROJECT_NAME='my-ci1'
-GIT_REPO_PATH='/Users/chenjf/projects/my-ci1'
-CI_SERVER='detachmentsoft.top'
-CD_SERVER='detachmentsoft.top'
+PROJECT_NAME='detachment-system'
+GIT_REPO_PATH='/Users/chenjf/projects/detachment-system'
+CI_SERVER='detachment-soft.top'
+CD_SERVER='detachment-soft.top'
 CI_USER=''
 CI_PASSWORD=''
 CD_USER=''
