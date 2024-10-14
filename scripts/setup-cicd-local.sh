@@ -17,8 +17,8 @@ set -eou pipefail
 : ${CD_USER:=${PROJECT_NAME}cd}
 : ${CD_PASSWORD:="Passw0rd"}
 
-[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER ] || printf "\n\n" | ssh-keygen -t rsa -b 4096 -C "$CI_USER@$CI_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
-[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER ] || printf "\n\n" | ssh-keygen -t rsa -b 4096 -C "$CD_USER@$CD_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
+[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER ] || ssh-keygen -t rsa -b 4096 -C "$CI_USER@$CI_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
+[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER ] || ssh-keygen -t rsa -b 4096 -C "$CD_USER@$CD_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
 
 # the printf tips does not work any more because ssh command
 # read input from terminal directory instead from stdin
@@ -28,7 +28,7 @@ if type -p sshpass > /dev/null 2>&1; then
 else
   ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER "$CI_USER"@"$CI_SERVER"
   ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER "$CD_USER"@"$CD_SERVER"
-if
+fi
 
 cat << _SSH_CONFIG_FOR_CI >> ~/.ssh/config
 
@@ -47,9 +47,9 @@ Host $CD_SERVER
   IdentitiesOnly yes
 _SSH_CONFIG_FOR_CD
 
-git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
+git -C "$GIT_REPO_PATH" remote get-url ci-at-$CI_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
 git -C "$GIT_REPO_PATH" remote add ci-at-$CI_SERVER ssh://$CI_USER@$CI_SERVER:/home/$CI_USER/$PROJECT_NAME.git
-git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
+git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
 git -C "$GIT_REPO_PATH" remote add cd-at-$CD_SERVER ssh://$CD_USER@$CD_SERVER:/home/$CD_USER/$PROJECT_NAME.git
 
 

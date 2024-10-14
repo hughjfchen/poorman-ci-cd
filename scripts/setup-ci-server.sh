@@ -9,7 +9,7 @@ set -eou pipefail
 [ -z $PROJECT_NAME ] && echo "PROJECT_NAME cannot be empty" && exit 2
 [ -z $GIT_REPO_PATH ] && echo "GIT_REPO_PATH cannot be empty" && exit 2
 
-if sudo -n /usr/bin/true 2>/dev/null; then
+if sudo -n true 2>/dev/null; then
   echo "This script will run with passwordless sudo"
 else
   echo "This script needs a user with passwordless sudo permission,will abort"
@@ -31,7 +31,7 @@ fi
 if ! getent passwd "$CI_USER" >/dev/null 2>&1; then
   sudo useradd -m "$CI_USER"
   printf "%s\n%s\n" "${CI_PASSWORD}" "${CI_PASSWORD}"| sudo passwd "$CI_USER"
-  printf "%s\n" "$CI_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CI_USER} > /dev/null
+  [ -d /etc/sudoers.d ] && printf "%s\n" "$CI_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CI_USER} > /dev/null
 else
   printf "%s\n" "$CI_USER already exists, skip creating user"
   printf "%s\n" "Please make sure the user $CI_USER is the EXACT user you want to use to do the CI job."
@@ -48,6 +48,7 @@ sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.git
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.work
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.build
 sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git init --bare
+sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git branch -m main
 
 
 

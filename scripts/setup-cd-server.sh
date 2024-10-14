@@ -9,7 +9,7 @@ set -eou pipefail
 [ -z $PROJECT_NAME ] && echo "PROJECT_NAME cannot be empty" && exit 2
 [ -z $GIT_REPO_PATH ] && echo "GIT_REPO_PATH cannot be empty" && exit 2
 
-if sudo -n /usr/bin/true 2>/dev/null; then
+if sudo -n true 2>/dev/null; then
   echo "This script will run with passwordless sudo"
 else
   echo "This script needs a user with passwordless sudo permission,will abort"
@@ -25,7 +25,7 @@ if ! getent passwd "$CD_USER" >/dev/null 2>&1; then
   sudo useradd -m "$CD_USER"
 
   printf "%s\n%s\n" "$CD_PASSWORD" "$CD_PASSWORD" | sudo passwd "$CD_USER"
-  printf "%s\n" "$CD_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CD_USER} > /dev/null
+  [ -d /etc/sudoers.d ] && printf "%s\n" "$CD_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CD_USER} > /dev/null
 else
   printf "%s\n" "$CD_USER already exists, skip creating user"
   printf "%s\n" "Please make sure the user $CD_USER is the EXACT user you want to use to do the CD job."
@@ -36,6 +36,7 @@ sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.work
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.build
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.deploy
 sudo -u $CD_USER git -C /home/$CD_USER/$PROJECT_NAME.git init --bare
+sudo -u $CD_USER git -C /home/$CD_USER/$PROJECT_NAME.git branch -m main
 
 # Git Hook for ban on push to main branch
 cat << _EOFPreReceive | sudo -u $CD_USER tee /home/$CD_USER/$PROJECT_NAME.git/hooks/pre-receive > /dev/null

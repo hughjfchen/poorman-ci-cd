@@ -94,7 +94,7 @@ set -eou pipefail
 [ -z $PROJECT_NAME ] && echo "PROJECT_NAME cannot be empty" && exit 2
 [ -z $GIT_REPO_PATH ] && echo "GIT_REPO_PATH cannot be empty" && exit 2
 
-if sudo -n /usr/bin/true 2>/dev/null; then
+if sudo -n true 2>/dev/null; then
   echo "This script will run with passwordless sudo"
 else
   echo "This script needs a user with passwordless sudo permission,will abort"
@@ -130,7 +130,7 @@ to run the CI script.
 if ! getent passwd "$CI_USER" >/dev/null 2>&1; then
   sudo useradd -m "$CI_USER"
   printf "%s\n%s\n" "${CI_PASSWORD}" "${CI_PASSWORD}"| sudo passwd "$CI_USER"
-  printf "%s\n" "$CI_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CI_USER} > /dev/null
+  [ -d /etc/sudoers.d ] && printf "%s\n" "$CI_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CI_USER} > /dev/null
 else
   printf "%s\n" "$CI_USER already exists, skip creating user"
   printf "%s\n" "Please make sure the user $CI_USER is the EXACT user you want to use to do the CI job."
@@ -146,6 +146,7 @@ sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.git
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.work
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.build
 sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git init --bare
+sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git branch -m main
 #+end_src
 
 - add a =pre-receive= hook to check permission to avoid unauthorized push ::
@@ -244,7 +245,7 @@ if ! getent passwd "$CD_USER" >/dev/null 2>&1; then
   sudo useradd -m "$CD_USER"
 
   printf "%s\n%s\n" "$CD_PASSWORD" "$CD_PASSWORD" | sudo passwd "$CD_USER"
-  printf "%s\n" "$CD_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CD_USER} > /dev/null
+  [ -d /etc/sudoers.d ] && printf "%s\n" "$CD_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CD_USER} > /dev/null
 else
   printf "%s\n" "$CD_USER already exists, skip creating user"
   printf "%s\n" "Please make sure the user $CD_USER is the EXACT user you want to use to do the CD job."
@@ -259,6 +260,7 @@ sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.work
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.build
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.deploy
 sudo -u $CD_USER git -C /home/$CD_USER/$PROJECT_NAME.git init --bare
+sudo -u $CD_USER git -C /home/$CD_USER/$PROJECT_NAME.git branch -m main
 #+end_src
 
 - add a =pre-receive= hook to check permission to avoid unauthorized push ::
@@ -344,8 +346,8 @@ set -eou pipefail
 - generate a =ssh= key for the dedicated user accessing to the CI/CD machines with following command ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
-[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER ] || printf "\n\n" | ssh-keygen -t rsa -b 4096 -C "$CI_USER@$CI_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
-[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER ] || printf "\n\n" | ssh-keygen -t rsa -b 4096 -C "$CD_USER@$CD_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
+[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER ] || ssh-keygen -t rsa -b 4096 -C "$CI_USER@$CI_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
+[ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER ] || ssh-keygen -t rsa -b 4096 -C "$CD_USER@$CD_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
 #+end_src
 
 - copy the generated =ssh= key to the CI/CD machine so that the user can login without password ::
@@ -359,7 +361,7 @@ if type -p sshpass > /dev/null 2>&1; then
 else
   ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER "$CI_USER"@"$CI_SERVER"
   ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER "$CD_USER"@"$CD_SERVER"
-if
+fi
 #+end_src
 
 - config =ssh= config to make sure the dedicated user login with the generated key to the CI/CD machine ::
@@ -386,9 +388,9 @@ _SSH_CONFIG_FOR_CD
 - define a =git= remote to push the =main= source tree branch to the CI machine ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
-git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
+git -C "$GIT_REPO_PATH" remote get-url ci-at-$CI_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
 git -C "$GIT_REPO_PATH" remote add ci-at-$CI_SERVER ssh://$CI_USER@$CI_SERVER:/home/$CI_USER/$PROJECT_NAME.git
-git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
+git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
 git -C "$GIT_REPO_PATH" remote add cd-at-$CD_SERVER ssh://$CD_USER@$CD_SERVER:/home/$CD_USER/$PROJECT_NAME.git
 #+end_src
 
