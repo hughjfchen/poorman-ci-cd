@@ -550,3 +550,30 @@ _CD_TEMPLATE_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/cd.sh
 set -u
 #+end_src
+
+**** Run me after tangle
+:PROPERTIES:
+:header-args+: :var CI_SERVER=tbl-input-parameters[7,2]
+:header-args+: :var CD_SERVER=tbl-input-parameters[9,2]
+:END:
+
+Remember to run me with C -c C - c after tangling the files:
+
+#+begin_src  :shebang #!/usr/bin/env bash :tangle no
+set -eou pipefail
+
+[ -z $CI_SERVER ] && echo "CI_SERVER cannot be empty" && exit 2
+[ -z $CD_SERVER ] && echo "CD_SERVER cannot be empty" && exit 2
+
+[ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
+
+cp scripts/setup-ci-server.sh $GIT_REPO_PATH/.poormanscicd/setup-ci-server-$CI_SERVER.sh
+cp scripts/setup-cd-server.sh $GIT_REPO_PATH/.poormanscicd/setup-cd-server-$CD_SERVER.sh
+cp scripts/setup-cicd-local.sh $GIT_REPO_PATH/.poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
+
+git -C "$GIT_REPO_PATH" add .poormanscicd/setup-ci-server-$CI_SERVER.sh
+git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cd-server-$CD_SERVER.sh
+git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
+
+git -C "$GIT_REPO_PATH" commit -m "add CI on $CI_SERVER and CD on $CD_SERVER support."
+#+end_src
