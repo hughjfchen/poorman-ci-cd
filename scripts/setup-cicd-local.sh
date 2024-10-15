@@ -30,6 +30,28 @@ else
   ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER "$CD_USER"@"$CD_SERVER"
 fi
 
+function add_CI_to_ssh_config() {
+cat << _SSH_CONFIG_FOR_CI > ~/.ssh/config
+
+Host $CI_SERVER
+  StrictHostKeyChecking accept-new
+  User $CI_USER
+  IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
+  IdentitiesOnly yes
+_SSH_CONFIG_FOR_CI
+}
+function add_CD_to_ssh_config() {
+cat << _SSH_CONFIG_FOR_CD > ~/.ssh/config
+
+Host $CD_SERVER
+  StrictHostKeyChecking accept-new
+  User $CD_USER
+  IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
+  IdentitiesOnly yes
+_SSH_CONFIG_FOR_CD
+}
+
+function append_CI_to_ssh_config() {
 cat << _SSH_CONFIG_FOR_CI >> ~/.ssh/config
 
 Host $CI_SERVER
@@ -38,6 +60,8 @@ Host $CI_SERVER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
   IdentitiesOnly yes
 _SSH_CONFIG_FOR_CI
+}
+function append_CD_to_ssh_config () {
 cat << _SSH_CONFIG_FOR_CD >> ~/.ssh/config
 
 Host $CD_SERVER
@@ -46,10 +70,28 @@ Host $CD_SERVER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
   IdentitiesOnly yes
 _SSH_CONFIG_FOR_CD
+}
 
-git -C "$GIT_REPO_PATH" remote get-url ci-at-$CI_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
+if [ -f ~/.ssh/config ]; then
+  if grep "id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER" ~/.ssh/config >/dev/null 2>&1; then
+    true
+  else
+    append_CI_to_ssh_config
+  fi
+  if grep "id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER" ~/.ssh/config >/dev/null 2>&1; then
+    true
+  else
+    append_CD_to_ssh_config
+  fi
+else
+  mkdir -p ~/.ssh
+  add_CI_to_ssh_config
+  add_CD_to_ssh_config
+fi
+
+git -C "$GIT_REPO_PATH" remote get-url ci-at-$CI_SERVER >/dev/null 2>&1 && git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
 git -C "$GIT_REPO_PATH" remote add ci-at-$CI_SERVER ssh://$CI_USER@$CI_SERVER:/home/$CI_USER/$PROJECT_NAME.git
-git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
+git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER >/dev/null 2>&1 && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
 git -C "$GIT_REPO_PATH" remote add cd-at-$CD_SERVER ssh://$CD_USER@$CD_SERVER:/home/$CD_USER/$PROJECT_NAME.git
 
 

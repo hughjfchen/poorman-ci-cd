@@ -367,6 +367,28 @@ fi
 - config =ssh= config to make sure the dedicated user login with the generated key to the CI/CD machine ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+function add_CI_to_ssh_config() {
+cat << _SSH_CONFIG_FOR_CI > ~/.ssh/config
+
+Host $CI_SERVER
+  StrictHostKeyChecking accept-new
+  User $CI_USER
+  IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
+  IdentitiesOnly yes
+_SSH_CONFIG_FOR_CI
+}
+function add_CD_to_ssh_config() {
+cat << _SSH_CONFIG_FOR_CD > ~/.ssh/config
+
+Host $CD_SERVER
+  StrictHostKeyChecking accept-new
+  User $CD_USER
+  IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
+  IdentitiesOnly yes
+_SSH_CONFIG_FOR_CD
+}
+
+function append_CI_to_ssh_config() {
 cat << _SSH_CONFIG_FOR_CI >> ~/.ssh/config
 
 Host $CI_SERVER
@@ -375,6 +397,8 @@ Host $CI_SERVER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
   IdentitiesOnly yes
 _SSH_CONFIG_FOR_CI
+}
+function append_CD_to_ssh_config () {
 cat << _SSH_CONFIG_FOR_CD >> ~/.ssh/config
 
 Host $CD_SERVER
@@ -383,14 +407,32 @@ Host $CD_SERVER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
   IdentitiesOnly yes
 _SSH_CONFIG_FOR_CD
+}
+
+if [ -f ~/.ssh/config ]; then
+  if grep "id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER" ~/.ssh/config >/dev/null 2>&1; then
+    true
+  else
+    append_CI_to_ssh_config
+  fi
+  if grep "id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER" ~/.ssh/config >/dev/null 2>&1; then
+    true
+  else
+    append_CD_to_ssh_config
+  fi
+else
+  mkdir -p ~/.ssh
+  add_CI_to_ssh_config
+  add_CD_to_ssh_config
+fi
 #+end_src
 
 - define a =git= remote to push the =main= source tree branch to the CI machine ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
-git -C "$GIT_REPO_PATH" remote get-url ci-at-$CI_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
+git -C "$GIT_REPO_PATH" remote get-url ci-at-$CI_SERVER >/dev/null 2>&1 && git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
 git -C "$GIT_REPO_PATH" remote add ci-at-$CI_SERVER ssh://$CI_USER@$CI_SERVER:/home/$CI_USER/$PROJECT_NAME.git
-git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER 2>/dev/null && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
+git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER >/dev/null 2>&1 && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
 git -C "$GIT_REPO_PATH" remote add cd-at-$CD_SERVER ssh://$CD_USER@$CD_SERVER:/home/$CD_USER/$PROJECT_NAME.git
 #+end_src
 
@@ -559,7 +601,7 @@ set -u
 
 Remember to run me with C -c C - c after tangling the files:
 
-#+begin_src  :shebang #!/usr/bin/env bash :tangle no
+#+begin_src bash :shebang #!/usr/bin/env bash :tangle no
 set -eou pipefail
 
 [ -z $CI_SERVER ] && echo "CI_SERVER cannot be empty" && exit 2
@@ -577,3 +619,10 @@ git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER
 
 git -C "$GIT_REPO_PATH" commit -m "add CI on $CI_SERVER and CD on $CD_SERVER support."
 #+end_src
+
+#+RESULTS:
+| [main  | 1746e7a] |      add | CI                                                                        | on            | detachment-soft.top | and | CD | on | detachment-soft.top | support. |
+| 3      | files    | changed, | 444                                                                       | insertions(+) |                     |     |    |    |                     |          |
+| create | mode     |   100755 | .poormanscicd/setup-cd-server-detachment-soft.top.sh                      |               |                     |     |    |    |                     |          |
+| create | mode     |   100755 | .poormanscicd/setup-ci-server-detachment-soft.top.sh                      |               |                     |     |    |    |                     |          |
+| create | mode     |   100755 | .poormanscicd/setup-cicd-local-detachment-soft.top-detachment-soft.top.sh |               |                     |     |    |    |                     |          |
