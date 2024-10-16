@@ -59,25 +59,25 @@ To enable an existing =git= repository for CI/CD, following inputs are needed:
 
 #+CAPTION: Input-Parameters
 #+NAME: tbl-input-parameters
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| Name                         | Required? | Value                                    | Default Value     | Remarks                                 |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| project_name                 | Yes       | detachment-system                        | N/A               | the name of the project                 |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| path_to_the_repo             | Yes       | /Users/chenjf/projects/detachment-system | N/A               | path to the project =git= repository      |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| CI machine DNS or IP address | Yes       | detachment-soft.top                      | N/A               | the =DNS= or IP address of the CI machine |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| CD machine DNS or IP address | Yes       | detachment-soft.top                      | N/A               | the =DNS= or IP address of the CD machine |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| CI User                      | No        |                                          | ${PROJECT_NAME}ci | the user name who will do the CI job    |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| CI User Password             | No        |                                          | "Passw0rd"        | the password of the CI user             |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| CD User                      | No        |                                          | ${PROJECT_NAME}cd | the user name who will do the CD job    |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
-| CD User Password             | No        |                                          | "Passw0rd"        | the password of the CD user             |
-|------------------------------+-----------+------------------------------------------+-------------------+-----------------------------------------|
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| Name                         | Required? | Value                         | Default Value     | Remarks                                 |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| project_name                 | Yes       | my-ci1                        | N/A               | the name of the project                 |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| path_to_the_repo             | Yes       | /Users/chenjf/projects/my-ci1 | N/A               | path to the project =git= repository      |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| CI machine DNS or IP address | Yes       | detachmentsoft.top            | N/A               | the =DNS= or IP address of the CI machine |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| CD machine DNS or IP address | Yes       | detachmentsoft.top            | N/A               | the =DNS= or IP address of the CD machine |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| CI User                      | No        |                               | ${PROJECT_NAME}ci | the user name who will do the CI job    |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| CI User Password             | No        |                               | "Passw0rd"        | the password of the CI user             |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| CD User                      | No        |                               | ${PROJECT_NAME}cd | the user name who will do the CD job    |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
+| CD User Password             | No        |                               | "Passw0rd"        | the password of the CD user             |
+|------------------------------+-----------+-------------------------------+-------------------+-----------------------------------------|
 
 *** Common
 :PROPERTIES:
@@ -89,17 +89,159 @@ As a shell script, following code should be put in front of the
 script to make sure it follows some common rules:
 #+NAME: common.sh
 #+begin_src bash :tangle no
-set -eou pipefail
+set -Eeuo pipefail
 
-[ -z $PROJECT_NAME ] && echo "PROJECT_NAME cannot be empty" && exit 2
-[ -z $GIT_REPO_PATH ] && echo "GIT_REPO_PATH cannot be empty" && exit 2
+guard_bash_error () {
+    set -Eeuo pipefail
+}
 
-if sudo -n true 2>/dev/null; then
-  echo "This script will run with passwordless sudo"
-else
-  echo "This script needs a user with passwordless sudo permission,will abort"
-  exit 127
-fi
+# Log levels
+INFO=0
+WARN=1
+ERROR=2
+FATAL=3
+DEBUG=4
+DEFAULT_LOG_LEVEL=${ERROR}
+
+my_exit () {
+    echo "EXIT: - [HOST:$(hostname)]: - $(date +"%Y-%m-%d %H:%M:%S") - $1"
+    exit "$2"
+}
+
+msg () {
+    if [ "$1" -le ${DEFAULT_LOG_LEVEL} ]; then
+        echo "[HOST:$(hostname)]: - $(date +"%Y-%m-%d %H:%M:%S") - $2"
+    fi
+}
+
+info () {
+    msg ${INFO} "INFO: - $1"
+}
+
+warn () {
+    msg ${WARN} "WARNING: - $1"
+}
+
+error () {
+    msg ${ERROR} "ERROR: - $1"
+}
+
+fatal () {
+    msg ${FATAL} "FATAL: - $1"
+}
+
+debug () {
+    msg ${DEBUG} "DEBUG: - $1"
+}
+
+begin_banner () {
+    info "$1 - $2 phase - begin"
+}
+
+done_banner () {
+    info "$1 - $2 phase - done"
+}
+
+### turn path within script into absolute path
+### must pass the calling string of the script as the first parameter
+### e.g., ./path_to_script/script.sh
+### or, /root/path_to_script/script.sh
+### return the absolute path to the script with "echo" command
+turn_to_absolute_path () {
+    local SCRIPT_ABS_PATH_RAW
+    SCRIPT_ABS_PATH_RAW="$(dirname "$1")"
+    # turn SCRIPT_ABS_PATH into absolute path
+    case ${SCRIPT_ABS_PATH_RAW} in
+        /*) echo "${SCRIPT_ABS_PATH_RAW}" ;;
+        \.\.*) echo "$PWD/${SCRIPT_ABS_PATH_RAW}" ;;
+        \.*) echo "$PWD/${SCRIPT_ABS_PATH_RAW}" ;;
+        ,*) echo "$PWD" ;;
+    esac
+}
+
+### change CD to up to the project root directory
+### must pass the absolute path to the script as the first parameter
+change_CD_to_project_root () {
+    cd "$1"
+    local up_level=..
+    local my_loop=10 # guard not to loop forever
+    until [ -f "${up_level}/cook.sh" ] && [ ${my_loop} -gt 0 ]
+    do
+        up_level=${up_level}/..
+        my_loop=$((my_loop - 1))
+    done
+    if [ ${my_loop} -eq 0 ]; then
+        my_exit "Too many level up within the searching for DevOps directory,abort." 1
+    fi
+    cd "$1/${up_level}"
+}
+
+### check OS and distribution
+### return the OS distribution and ID with "echo" command
+check_dist_or_OS () {
+    local MY_THE_DISTRIBUTION_ID=""
+    local MY_THE_DISTRIBUTION_VERSION=""
+    if [ -e /etc/os-release ]; then
+        MY_THE_DISTRIBUTION_ID=$(grep -w "ID" /etc/os-release |awk -F"=" '{print $NF}'|sed 's/"//g')
+        if [ "${MY_THE_DISTRIBUTION_ID}" == "ubuntu" ]; then
+            MY_THE_DISTRIBUTION_VERSION=$(grep -w "VERSION_ID" /etc/os-release |awk -F"=" '{print $NF}'|sed 's/"//g')
+        else
+            MY_THE_DISTRIBUTION_VERSION=$(grep -w "VERSION_ID" /etc/os-release |awk -F"=" '{print $NF}'|awk -F"." '{print $1}'|sed 's/"//g')
+        fi
+        echo "${MY_THE_DISTRIBUTION_ID} ${MY_THE_DISTRIBUTION_VERSION}"
+    else
+        if type uname > /dev/null 2>&1; then
+             MY_THE_DISTRIBUTION_ID=$(uname -s)
+             MY_THE_DISTRIBUTION_VERSION=$(uname -r)
+             echo "${MY_THE_DISTRIBUTION_ID} ${MY_THE_DISTRIBUTION_VERSION}"
+        else
+             echo ""
+        fi
+    fi
+}
+
+### guard that the caller of the script must be root or has sudo right
+guard_root_or_sudo () {
+    if [[ $EUID -gt 0 ]] && ! sudo -n true >/dev/null 2>&1; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+### init script with check if root or sudo
+init_with_root_or_sudo () {
+    guard_bash_error
+
+    if ! guard_root_or_sudo; then
+        my_exit "You must be root or you must be sudoer to prepare the env for CI/CD." 1
+    fi
+
+    SCRIPT_ABS_PATH=$(turn_to_absolute_path "$0")
+
+    # change_CD_to_project_root ${SCRIPT_ABS_PATH}
+
+    THE_DISTRIBUTION_ID_VERSION=$(check_dist_or_OS)
+    THE_DISTRIBUTION_ID=$(echo "${THE_DISTRIBUTION_ID_VERSION}"|awk '{print $1}')
+    THE_DISTRIBUTION_VERSION=$(echo "${THE_DISTRIBUTION_ID_VERSION}"|awk '{print $2}')
+}
+
+### init script without check if root or sudo
+init_without_root_or_sudo () {
+    guard_bash_error
+
+    SCRIPT_ABS_PATH=$(turn_to_absolute_path "$0")
+
+    # change_CD_to_project_root ${SCRIPT_ABS_PATH}
+
+    THE_DISTRIBUTION_ID_VERSION=$(check_dist_or_OS)
+    THE_DISTRIBUTION_ID=$(echo "${THE_DISTRIBUTION_ID_VERSION}"|awk '{print $1}')
+    THE_DISTRIBUTION_VERSION=$(echo "${THE_DISTRIBUTION_ID_VERSION}"|awk '{print $2}')
+}
+
+[ -z $PROJECT_NAME ] && my_exit "PROJECT_NAME cannot be empty" 2
+[ -z $GIT_REPO_PATH ] && my_exit "GIT_REPO_PATH cannot be empty" 2
+
 #+end_src
 
 **** CI Server
@@ -116,7 +258,11 @@ Add following to the begining of the script to kick off a =shell script= :
 #+begin_src bash :shebang #!/usr/bin/env bash :tangle scripts/setup-ci-server.sh :noweb yes
 <<common.sh>>
 
-[ -z $CI_SERVER ] && echo "CI_SERVER cannot be empty" && exit 2
+[ -z $CI_SERVER ] && my_exit "CI_SERVER cannot be empty" 2
+
+init_with_root_or_sudo
+
+begin_banner "Setup CI server" "$CI_SERVER"
 
 : ${CI_USER:=${PROJECT_NAME}ci}
 : ${CI_PASSWORD:="Passw0rd"}
@@ -127,14 +273,18 @@ For each project, a dedicated user would be created on the CI machine
 to run the CI script.
 
 #+begin_src  bash :tangle scripts/setup-ci-server.sh :no-expand :comments org
+begin_banner "Setup CI server" "Create CI user $CI_USER"
+
 if ! getent passwd "$CI_USER" >/dev/null 2>&1; then
   sudo useradd -m "$CI_USER"
   printf "%s\n%s\n" "${CI_PASSWORD}" "${CI_PASSWORD}"| sudo passwd "$CI_USER"
   [ -d /etc/sudoers.d ] && printf "%s\n" "$CI_USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/999-cloud-init-user-${CI_USER} > /dev/null
 else
-  printf "%s\n" "$CI_USER already exists, skip creating user"
-  printf "%s\n" "Please make sure the user $CI_USER is the EXACT user you want to use to do the CI job."
+  warn "$CI_USER already exists, skip creating user"
+  warn "Please make sure the user $CI_USER is the EXACT user you want to use to do the CI job."
 fi
+
+done_banner "Setup CI server" "Create CI user $CI_USER"
 #+end_src
 
 - init a bare =git= repo ::
@@ -142,11 +292,14 @@ No need to work on the source tree on the CI machine, so we only create
 a =bare= git repo on the CI machine.
 
 #+begin_src  bash :tangle scripts/setup-ci-server.sh :no-expand :comments org
+begin_banner "Setup CI server" "Create server git repo"
+
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.git
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.work
 sudo -u $CI_USER mkdir -p /home/$CI_USER/$PROJECT_NAME.build
 sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git init --bare
-sudo -u $CI_USER git -C /home/$CI_USER/$PROJECT_NAME.git branch -m main
+
+done_banner "Setup CI server" "Create server git repo"
 #+end_src
 
 - add a =pre-receive= hook to check permission to avoid unauthorized push ::
@@ -157,6 +310,8 @@ This =pre-receive= script will check permission to make sure
 only listed users can push to the branch dedicated for =CI= build.
 
 #+begin_src  bash :tangle scripts/setup-ci-server.sh :no-expand :comments org
+begin_banner "Setup CI server" "Create a git pre-receive hook on the server git repo"
+
 cat << _EOFPreReceive | sudo -u $CI_USER tee /home/$CI_USER/$PROJECT_NAME.git/hooks/pre-receive > /dev/null
 #!/usr/bin/env bash
 
@@ -174,6 +329,8 @@ if [ "\$changedBranch" == "main" ]; then
 fi
 _EOFPreReceive
 sudo -u $CI_USER chmod 755 /home/$CI_USER/$PROJECT_NAME.git/hooks/pre-receive
+
+done_banner "Setup CI server" "Create a git pre-receive hook on the server git repo"
 #+end_src
 
 - add the =post-receive= hook which will checkout the work tree and call the =ci= script ::
@@ -186,6 +343,8 @@ Then, the =CI= script within the source tree will be called to do
 the real =CI= work.
 
 #+begin_src  bash :tangle scripts/setup-ci-server.sh :no-expand :comments org
+begin_banner "Setup CI server" "Create a git post-receive hook on the server git repo"
+
 cat << _EOFPostReceive | sudo -u $CI_USER tee /home/$CI_USER/$PROJECT_NAME.git/hooks/post-receive > /dev/null
 #!/usr/bin/env bash
 
@@ -212,6 +371,10 @@ do
 done
 _EOFPostReceive
 sudo -u $CI_USER chmod 755 /home/$CI_USER/$PROJECT_NAME.git/hooks/post-receive
+
+done_banner "Setup CI server" "Create a git post-receive hook on the server git repo"
+
+done_banner "Setup CI server" "$CI_SERVER"
 #+end_src
 
 **** CD Server
@@ -226,7 +389,11 @@ Add following to the begining of the script:
 #+begin_src bash :shebang #!/usr/bin/env bash :tangle scripts/setup-cd-server.sh :noweb yes
 <<common.sh>>
 
-[ -z $CD_SERVER ] && echo "CD_SERVER cannot be empty" && exit 2
+[ -z $CD_SERVER ] && my_exit "CD_SERVER cannot be empty" 2
+
+init_with_root_or_sudo
+
+begin_banner "Setup CD server" "$CD_SERVER"
 
 : ${CD_USER:=${PROJECT_NAME}cd}
 : ${CD_PASSWORD:="Passw0rd"}
@@ -241,6 +408,8 @@ A dedicated user would be created on the CD machine to run the CD script.
 Following is the command:
 
 #+begin_src  bash :tangle scripts/setup-cd-server.sh :no-expand
+begin_banner "Setup CD server" "Create CD user $CD_USER"
+
 if ! getent passwd "$CD_USER" >/dev/null 2>&1; then
   sudo useradd -m "$CD_USER"
 
@@ -250,21 +419,28 @@ else
   printf "%s\n" "$CD_USER already exists, skip creating user"
   printf "%s\n" "Please make sure the user $CD_USER is the EXACT user you want to use to do the CD job."
 fi
+
+done_banner "Setup CD server" "Create CD user $CD_USER"
 #+end_src
 
 - init a bare =git= repo ::
 run the following command:
 #+begin_src  bash :tangle scripts/setup-cd-server.sh :no-expand
+begin_banner "Setup CD server" "Create server git repo"
+
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.git
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.work
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.build
 sudo -u $CD_USER mkdir -p /home/$CD_USER/$PROJECT_NAME.deploy
 sudo -u $CD_USER git -C /home/$CD_USER/$PROJECT_NAME.git init --bare
-sudo -u $CD_USER git -C /home/$CD_USER/$PROJECT_NAME.git branch -m main
+
+done_banner "Setup CD server" "Create server git repo"
 #+end_src
 
 - add a =pre-receive= hook to check permission to avoid unauthorized push ::
 #+begin_src  bash :tangle scripts/setup-cd-server.sh :no-expand
+begin_banner "Setup CD server" "Create a git pre-receive hook on the server git repo"
+
 # Git Hook for ban on push to main branch
 cat << _EOFPreReceive | sudo -u $CD_USER tee /home/$CD_USER/$PROJECT_NAME.git/hooks/pre-receive > /dev/null
 #!/usr/bin/env bash
@@ -282,11 +458,15 @@ if [ "\$changedBranch" == "main" ]; then
 fi
 _EOFPreReceive
 sudo -u $CD_USER chmod 755 /home/$CD_USER/$PROJECT_NAME.git/hooks/pre-receive
+
+done_banner "Setup CD server" "Create a git pre-receive hook on the server git repo"
 #+end_src
 
 - add the =post-reveive= hook which will checkout the work tree and call the =ci= script ::
 
 #+begin_src  bash :tangle scripts/setup-cd-server.sh :no-expand
+begin_banner "Setup CD server" "Create a git post-receive hook on the server git repo"
+
 cat << _EOFPostReceive | sudo -u $CD_USER tee /home/$CD_USER/$PROJECT_NAME.git/hooks/post-receive > /dev/null
 #!/usr/bin/env bash
 
@@ -314,6 +494,10 @@ do
 done
 _EOFPostReceive
 sudo -u $CD_USER chmod 755 /home/$CD_USER/$PROJECT_NAME.git/hooks/post-receive
+
+done_banner "Setup CD server" "Create a git post-receive hook on the server git repo"
+
+done_banner "Setup CD server" "$CD_SERVER"
 #+end_src
 
 **** Client Side
@@ -331,11 +515,13 @@ following actions must be taken:
 
 - prelude ::
 Add following to the begining of the script:
-#+begin_src bash :shebang #!/usr/bin/env bash :tangle scripts/setup-cicd-local.sh
-set -eou pipefail
+#+begin_src bash :shebang #!/usr/bin/env bash :tangle scripts/setup-cicd-local.sh :noweb yes
+<<common.sh>>
 
-[ -z $CI_SERVER ] && echo "CI_SERVER cannot be empty" && exit 2
-[ -z $CD_SERVER ] && echo "CD_SERVER cannot be empty" && exit 2
+[ -z $CI_SERVER ] && my_exit "CI_SERVER cannot be empty" 2
+[ -z $CD_SERVER ] && my_exit "CD_SERVER cannot be empty" 2
+
+begin_banner "Setup local development environment" "local"
 
 : ${CI_USER:=${PROJECT_NAME}ci}
 : ${CI_PASSWORD:="Passw0rd"}
@@ -346,13 +532,19 @@ set -eou pipefail
 - generate a =ssh= key for the dedicated user accessing to the CI/CD machines with following command ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "generate ssh keys to access CI/CD server"
+
 [ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER ] || ssh-keygen -t rsa -b 4096 -C "$CI_USER@$CI_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
 [ -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER ] || ssh-keygen -t rsa -b 4096 -C "$CD_USER@$CD_SERVER" -f ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
+
+done_banner "Setup local development environment" "generate ssh keys to access CI/CD server"
 #+end_src
 
 - copy the generated =ssh= key to the CI/CD machine so that the user can login without password ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "copy ssh keys to CI/CD server"
+
 # the printf tips does not work any more because ssh command
 # read input from terminal directory instead from stdin
 if type -p sshpass > /dev/null 2>&1; then
@@ -362,11 +554,15 @@ else
   ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER "$CI_USER"@"$CI_SERVER"
   ssh-copy-id -i ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER "$CD_USER"@"$CD_SERVER"
 fi
+
+done_banner "Setup local development environment" "copy ssh keys to CI/CD server"
 #+end_src
 
 - config =ssh= config to make sure the dedicated user login with the generated key to the CI/CD machine ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "add ssh config to access CI/CD server"
+
 function add_CI_to_ssh_config() {
 cat << _SSH_CONFIG_FOR_CI > ~/.ssh/config
 
@@ -425,20 +621,28 @@ else
   add_CI_to_ssh_config
   add_CD_to_ssh_config
 fi
+
+done_banner "Setup local development environment" "add ssh config to access CI/CD server"
 #+end_src
 
 - define a =git= remote to push the =main= source tree branch to the CI machine ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "add CI/CD remote to the git repo"
+
 git -C "$GIT_REPO_PATH" remote get-url ci-at-$CI_SERVER >/dev/null 2>&1 && git -C "$GIT_REPO_PATH" remote remove ci-at-$CI_SERVER
 git -C "$GIT_REPO_PATH" remote add ci-at-$CI_SERVER ssh://$CI_USER@$CI_SERVER:/home/$CI_USER/$PROJECT_NAME.git
 git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER >/dev/null 2>&1 && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
 git -C "$GIT_REPO_PATH" remote add cd-at-$CD_SERVER ssh://$CD_USER@$CD_SERVER:/home/$CD_USER/$PROJECT_NAME.git
+
+done_banner "Setup local development environment" "add CI/CD remote to the git repo"
 #+end_src
 
 - define a =git= =pre-push= hook to fetch the =CI= artifact and forware to the =CD= machine ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand :comments org
+begin_banner "Setup local development environment" "add a pre-push hook to the git repo"
+
 if [ -e $GIT_REPO_PATH/.git/hooks/pre-push ]; then
   sed -i.bak.by.sed "s/######AppendAssociativeCIServerFollowingThisLine######/&\nRELATED_CI_SERVERS[\"${CD_SERVER}\"]=\"$CI_SERVER\"/" $GIT_REPO_PATH/.git/hooks/pre-push
   rm -fr $GIT_REPO_PATH/.git/hooks/pre-push.bak.by.sed
@@ -504,11 +708,15 @@ _EOFPrePush
 set -u
 fi
 chmod 755 $GIT_REPO_PATH/.git/hooks/pre-push
+
+done_banner "Setup local development environment" "add a pre-push hook to the git repo"
 #+end_src
 
 - generate =follow-ci-log.sh= under the given =git= repository ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "generate follow-ci-log script"
+
 [ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
 
 cat << _FOLLOW_CI_LOG_SCRIPT > $GIT_REPO_PATH/.poormanscicd/follow-ci-log-$CI_SERVER.sh
@@ -521,11 +729,15 @@ cd_deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
 ssh $CD_USER@$CD_SERVER tail -f \$cd_deploy_output/cd.log
 _FOLLOW_CD_LOG_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/follow-cd-log-$CD_SERVER.sh
+
+done_banner "Setup local development environment" "generate follow-ci-log script"
 #+end_src
 
 - generate =view-ci-log.sh= under the given =git= repository ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "generate view-ci-log script"
+
 [ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
 
 cat << _VIEW_CI_LOG_SCRIPT > $GIT_REPO_PATH/.poormanscicd/view-ci-log-$CI_SERVER.sh
@@ -538,11 +750,15 @@ cd_deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
 ssh $CD_USER@$CD_SERVER cat \$cd_deploy_output/cd.log
 _VIEW_CD_LOG_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/view-cd-log-$CD_SERVER.sh
+
+done_banner "Setup local development environment" "generate view-ci-log script"
 #+end_src
 
 - generate =ci.sh= and =cd.sh= skeletion script under the =.poormanscicd= directory of the given =git= repository ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "generate ci/cd script template"
+
 set +u
 cat << _CI_TEMPLATE_SCRIPT > $GIT_REPO_PATH/.poormanscicd/ci.sh
 #!/usr/bin/env bash
@@ -591,6 +807,14 @@ echo "build tarball: \$BUILD_TARBALL"
 _CD_TEMPLATE_SCRIPT
 chmod 755 $GIT_REPO_PATH/.poormanscicd/cd.sh
 set -u
+
+done_banner "Setup local development environment" "generate ci/cd script template"
+
+done_banner "Setup local development environment" "local"
+
+info "The local git repo $GIT_REPO_PATH has been setup for CI/CD"
+info "Whenever you want to do CI, just run 'git push ci-at-$CI_SERVER'"
+info "And CD, just run 'git push cd-at-$CD_SERVER'"
 #+end_src
 
 **** Run me after tangle
@@ -613,16 +837,11 @@ cp scripts/setup-ci-server.sh $GIT_REPO_PATH/.poormanscicd/setup-ci-server-$CI_S
 cp scripts/setup-cd-server.sh $GIT_REPO_PATH/.poormanscicd/setup-cd-server-$CD_SERVER.sh
 cp scripts/setup-cicd-local.sh $GIT_REPO_PATH/.poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
 
-git -C "$GIT_REPO_PATH" add .poormanscicd/setup-ci-server-$CI_SERVER.sh
-git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cd-server-$CD_SERVER.sh
-git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
+#git -C "$GIT_REPO_PATH" add .poormanscicd/setup-ci-server-$CI_SERVER.sh
+#git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cd-server-$CD_SERVER.sh
+#git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
 
-git -C "$GIT_REPO_PATH" commit -m "add CI on $CI_SERVER and CD on $CD_SERVER support."
+#git -C "$GIT_REPO_PATH" commit -m "add CI on $CI_SERVER and CD on $CD_SERVER support."
 #+end_src
 
 #+RESULTS:
-| [main  | 1746e7a] |      add | CI                                                                        | on            | detachment-soft.top | and | CD | on | detachment-soft.top | support. |
-| 3      | files    | changed, | 444                                                                       | insertions(+) |                     |     |    |    |                     |          |
-| create | mode     |   100755 | .poormanscicd/setup-cd-server-detachment-soft.top.sh                      |               |                     |     |    |    |                     |          |
-| create | mode     |   100755 | .poormanscicd/setup-ci-server-detachment-soft.top.sh                      |               |                     |     |    |    |                     |          |
-| create | mode     |   100755 | .poormanscicd/setup-cicd-local-detachment-soft.top-detachment-soft.top.sh |               |                     |     |    |    |                     |          |
