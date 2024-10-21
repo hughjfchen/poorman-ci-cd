@@ -104,13 +104,13 @@ DEBUG=4
 DEFAULT_LOG_LEVEL=${ERROR}
 
 my_exit () {
-    echo "EXIT: - [HOST:$(hostname)]: - $(date +"%Y-%m-%d %H:%M:%S") - $1"
+    echo "$(date +"%Y-%m-%d %H:%M:%S") - EXIT: - $1"
     exit "$2"
 }
 
 msg () {
     if [ "$1" -le ${DEFAULT_LOG_LEVEL} ]; then
-        echo "[HOST:$(hostname)]: - $(date +"%Y-%m-%d %H:%M:%S") - $2"
+        echo "$(date +"%Y-%m-%d %H:%M:%S") - $2"
     fi
 }
 
@@ -315,15 +315,15 @@ begin_banner "Setup CI server" "Create a git pre-receive hook on the server git 
 cat << _EOFPreReceive | sudo -u $CI_USER tee /home/$CI_USER/$PROJECT_NAME.git/hooks/pre-receive > /dev/null
 #!/usr/bin/env bash
 
-# Git Hook for ban on push to main branch
+# Git Hook for ban on push to ci-branch-for-$CI_SERVER branch
 changedBranch=\$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
-# Add allowed users to push to main
+# Add allowed users to push to ci-branch-for-$CI_SERVER
 allowedUsers=($CI_USER)
-if [ "\$changedBranch" == "main" ]; then
+if [ "\$changedBranch" == "ci-branch-for-$CI_SERVER" ]; then
   if [[ \${allowedUsers[*]} =~ \$USER ]]; then
     true
   else
-    echo "You are not allowed push changes in the main branch, only $CI_USER can do it"
+    echo "You are not allowed push changes in the ci-branch-for-$CI_SERVER branch, only $CI_USER can do it"
     exit 1
   fi
 fi
@@ -348,25 +348,30 @@ begin_banner "Setup CI server" "Create a git post-receive hook on the server git
 cat << _EOFPostReceive | sudo -u $CI_USER tee /home/$CI_USER/$PROJECT_NAME.git/hooks/post-receive > /dev/null
 #!/usr/bin/env bash
 
-target_branch="main"
-working_tree="/home/$CI_USER/$PROJECT_NAME.work"
+ci_branch="ci-branch-for-$CI_SERVER"
+ci_branch_working_tree="/home/$CI_USER/$PROJECT_NAME.work.ci.branch"
+to_build_branch_working_tree="/home/$CI_USER/$PROJECT_NAME.work.to.build.branch"
 build_output="/home/$CI_USER/$PROJECT_NAME.build"
 while read -r oldrev newrev refname
 do
   branch=\$(git rev-parse --symbolic --abbrev-ref "\$refname")
-  if [ -n "\$branch" ] && [ "\$target_branch" = "\$branch" ]; then
-    mkdir -p "\$working_tree"
-    GIT_WORK_TREE=\$working_tree git checkout \$target_branch -f
+  if [ -n "\$branch" ] && [ "\$ci_branch" = "\$branch" ]; then
+    mkdir -p "\$ci_branch_working_tree"
+    GIT_WORK_TREE=\$ci_branch_working_tree git checkout \$ci_branch -f
+    to_build_branch=\$(cat \$ci_branch_working_tree/.branch.push.to.ci.$CI_SERVER)
+    to_build_rev=\$(cat \$ci_branch_working_tree/.revision.push.to.ci.$CI_SERVER)
+    mkdir -p "\$to_build_branch_working_tree"
+    GIT_WORK_TREE=\$to_build_branch_working_tree git checkout \$to_build_branch -f
     NOW=\$(date +"%Y%m%d-%H%M%S")
-    git tag "release_\$NOW" \$target_branch
+    git tag "release_\$NOW" \$to_build_branch
     echo " /==============================="
     echo " | RESTORE WORKING TREE COMPLETED"
-    echo " | Target branch: \$target_branch"
-    echo " | Target folder: \$working_tree"
+    echo " | Target branch: \$to_build_branch"
+    echo " | Target folder: \$to_build_branch_working_tree"
     echo " | Tag name : release_\$NOW"
     echo " | Now kick off the CI"
     echo " \=============================="
-    nohup "\$working_tree"/.poormanscicd/ci.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$build_output"/ci.log 2>&1 &
+    nohup "\$to_build_branch_working_tree"/.poormanscicd/ci.sh "\$to_build_branch_working_tree" "\$to_build_rev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$to_build_branch-\$to_build_rev.tar.gz > "\$build_output"/ci.log 2>&1 &
   fi
 done
 _EOFPostReceive
@@ -375,6 +380,31 @@ sudo -u $CI_USER chmod 755 /home/$CI_USER/$PROJECT_NAME.git/hooks/post-receive
 done_banner "Setup CI server" "Create a git post-receive hook on the server git repo"
 
 done_banner "Setup CI server" "$CI_SERVER"
+#+end_src
+
+- unsetup ::
+If you want to undo everything the script made on the CI server, just run the
+following script on the CI server.
+
+#+begin_src  bash :shebang #!/usr/bin/env bash :tangle scripts/unsetup-ci-server.sh :noweb yes
+<<common.sh>>
+
+[ -z $CI_SERVER ] && my_exit "CI_SERVER cannot be empty" 2
+
+init_with_root_or_sudo
+
+begin_banner "Setup CI server" "$CI_SERVER"
+
+: ${CI_USER:=${PROJECT_NAME}ci}
+: ${CI_PASSWORD:="Passw0rd"}
+
+begin_banner "UnSetup CI server" "Unsetup CI server"
+
+sudo userdel $CI_USER
+sudo rm -fr /home/$CI_USER
+[ -f /etc/sudoers.d/999-cloud-init-user-${CI_USER} ] && sudo rm -fr /etc/sudoers.d/999-cloud-init-user-${CI_USER}
+
+done_banner "UnSetup CI server" "Unsetup CI server"
 #+end_src
 
 **** CD Server
@@ -446,13 +476,13 @@ cat << _EOFPreReceive | sudo -u $CD_USER tee /home/$CD_USER/$PROJECT_NAME.git/ho
 #!/usr/bin/env bash
 
 changedBranch=\$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
-# Add allowed users to push to main
+# Add allowed users to push to cd-branch-for-$CD_SERVER
 allowedUsers=($CD_USER)
-if [ "\$changedBranch" == "main" ]; then
+if [ "\$changedBranch" == "cd-branch-for-$CD_SERVER" ]; then
   if [[ \${allowedUsers[*]} =~ \$USER ]]; then
     true
   else
-    echo "You are not allowed to push changes to the main branch, only $CD_USER can do it"
+    echo "You are not allowed to push changes to the cd-branch-for-$CD_SERVER branch, only $CD_USER can do it"
     exit 1
   fi
 fi
@@ -470,26 +500,31 @@ begin_banner "Setup CD server" "Create a git post-receive hook on the server git
 cat << _EOFPostReceive | sudo -u $CD_USER tee /home/$CD_USER/$PROJECT_NAME.git/hooks/post-receive > /dev/null
 #!/usr/bin/env bash
 
-target_branch="main"
-working_tree="/home/$CD_USER/$PROJECT_NAME.work"
+cd_branch="cd-branch-for-$CD_SERVER"
+cd_branch_working_tree="/home/$CD_USER/$PROJECT_NAME.work.cd.branch"
+to_deploy_branch_working_tree="/home/$CD_USER/$PROJECT_NAME.work.to.deploy.branch"
 build_output="/home/$CD_USER/$PROJECT_NAME.build"
 deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
 while read -r oldrev newrev refname
 do
   branch=\$(git rev-parse --symbolic --abbrev-ref "\$refname")
-  if [ -n "\$branch" ] && [ "\$target_branch" = "\$branch" ]; then
-    mkdir -p "\$working_tree"
-    GIT_WORK_TREE=\$working_tree git checkout \$target_branch -f
-    NOW=\$(date +"%Y%m%d-%H%M")
-    git tag "release_\$NOW" \$target_branch
+  if [ -n "\$branch" ] && [ "\$cd_branch" = "\$branch" ]; then
+    mkdir -p "\$cd_branch_working_tree"
+    GIT_WORK_TREE=\$cd_branch_working_tree git checkout \$cd_branch -f
+    to_deploy_branch=\$(cat \$cd_branch_working_tree/.branch.push.to.cd.$CD_SERVER)
+    to_deploy_rev=\$(cat \$cd_branch_working_tree/.revision.push.to.cd.$CD_SERVER)
+    mkdir -p "\$to_deploy_branch_working_tree"
+    GIT_WORK_TREE=\$to_deploy_branch_working_tree git checkout \$to_deploy_branch -f
+    NOW=\$(date +"%Y%m%d-%H%M%S")
+    git tag "release_\$NOW" \$to_deploy_branch
     echo " /==============================="
     echo " | RESTORE WORKING TREE COMPLETED"
-    echo " | Target branch: \$target_branch"
-    echo " | Target folder: \$working_tree"
+    echo " | Target branch: \$to_deploy_branch"
+    echo " | Target folder: \$to_deploy_branch_working_tree"
     echo " | Tag name : release_\$NOW"
     echo " | Now kick off the CD"
     echo " \=============================="
-    nohup "\$working_tree"/.poormanscicd/cd.sh "\$working_tree" "\$newrev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$newrev.tar.gz > "\$deploy_output"/cd.log 2>&1 &
+    nohup "\$to_deploy_branch_working_tree"/.poormanscicd/cd.sh "\$to_deploy_branch_working_tree" "\$to_deploy_rev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$to_deploy_branch-\$to_deploy_rev.tar.gz > "\$deploy_output"/cd.log 2>&1 &
   fi
 done
 _EOFPostReceive
@@ -498,6 +533,31 @@ sudo -u $CD_USER chmod 755 /home/$CD_USER/$PROJECT_NAME.git/hooks/post-receive
 done_banner "Setup CD server" "Create a git post-receive hook on the server git repo"
 
 done_banner "Setup CD server" "$CD_SERVER"
+#+end_src
+
+- unsetup ::
+If you want to undo everything the script made on the CI server, just run the
+following script on the CI server.
+
+#+begin_src  bash :shebang #!/usr/bin/env bash :tangle scripts/unsetup-cd-server.sh :noweb yes
+<<common.sh>>
+
+[ -z $CD_SERVER ] && my_exit "CD_SERVER cannot be empty" 2
+
+init_with_root_or_sudo
+
+begin_banner "Setup CD server" "$CD_SERVER"
+
+: ${CD_USER:=${PROJECT_NAME}cd}
+: ${CD_PASSWORD:="Passw0rd"}
+
+begin_banner "UnSetup CD server" "Unsetup CD server"
+
+sudo userdel $CD_USER
+sudo rm -fr /home/$CD_USER
+[ -f /etc/sudoers.d/999-cloud-init-user-${CD_USER} ] && sudo rm -fr /etc/sudoers.d/999-cloud-init-user-${CD_USER}
+
+done_banner "UnSetup CD server" "Unsetup CD server"
 #+end_src
 
 **** Client Side
@@ -625,7 +685,7 @@ fi
 done_banner "Setup local development environment" "add ssh config to access CI/CD server"
 #+end_src
 
-- define a =git= remote to push the =main= source tree branch to the CI machine ::
+- define a =git= remote and a branch to push the =main= source tree branch to the CI machine ::
 
 #+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
 begin_banner "Setup local development environment" "add CI/CD remote to the git repo"
@@ -635,81 +695,170 @@ git -C "$GIT_REPO_PATH" remote add ci-at-$CI_SERVER ssh://$CI_USER@$CI_SERVER:/h
 git -C "$GIT_REPO_PATH" remote get-url cd-at-$CD_SERVER >/dev/null 2>&1 && git -C "$GIT_REPO_PATH" remote remove cd-at-$CD_SERVER
 git -C "$GIT_REPO_PATH" remote add cd-at-$CD_SERVER ssh://$CD_USER@$CD_SERVER:/home/$CD_USER/$PROJECT_NAME.git
 
+git rev-parse --verify ci-branch-for-$CI_SERVER >/dev/null 2>&1 || git branch ci-branch-for-$CI_SERVER
+
+git rev-parse --verify cd-branch-for-$CD_SERVER >/dev/null 2>&1 || git branch cd-branch-for-$CD_SERVER
+
+[ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
+
 done_banner "Setup local development environment" "add CI/CD remote to the git repo"
 #+end_src
 
-- define a =git= =pre-push= hook to fetch the =CI= artifact and forware to the =CD= machine ::
+- generate =push-to-ci.sh= under the given =git= repository ::
 
-#+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand :comments org
-begin_banner "Setup local development environment" "add a pre-push hook to the git repo"
+#+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "generate push-to-ci script"
 
-if [ -e $GIT_REPO_PATH/.git/hooks/pre-push ]; then
-  sed -i.bak.by.sed "s/######AppendAssociativeCIServerFollowingThisLine######/&\nRELATED_CI_SERVERS[\"${CD_SERVER}\"]=\"$CI_SERVER\"/" $GIT_REPO_PATH/.git/hooks/pre-push
-  rm -fr $GIT_REPO_PATH/.git/hooks/pre-push.bak.by.sed
+cat << _PUSH_TO_CI_SCRIPT > $GIT_REPO_PATH/.poormanscicd/push-to-ci-$CI_SERVER.sh
+#!/usr/bin/env bash
+
+# this script accept one optional parameters, the branch
+# to push to the CI server for build
+# If no optional parameter given, defaul value will be used
+
+: "\${BRANCH_TO_PUSH:=main}"
+
+[ -n "\$1" ] && BRANCH_TO_PUSH="\$1"
+
+: "\${REV_TO_PUSH:=\$(git rev-parse \$BRANCH_TO_PUSH)}"
+
+[ -n "\$2" ] && REV_TO_PUSH="\$2"
+
+if git rev-parse --verify \$BRANCH_TO_PUSH >/dev/null 2>&1; then
+  true
 else
-set +u
-cat << _EOFPrePush > $GIT_REPO_PATH/.git/hooks/pre-push
-#!/usr/bin/env zsh
+  echo "branch \$BRANCH_TO_PUSH not exists, abort."
+  exit 112
+fi
 
-# An example hook script to verify what is about to be pushed.  Called by "git
-# push" after it has checked the remote status, but before anything has been
-# pushed.  If this script exits with a non-zero status nothing will be pushed.
-#
-# This hook is called with the following parameters:
-#
-# $1 -- Name of the remote to which the push is being done
-# $2 -- URL to which the push is being done
-#
-# If pushing without using a named remote those arguments will be equal.
-#
-# Information about the commits which are being pushed is supplied as lines to
-# the standard input in the form:
-#
-#   <local ref> <local oid> <remote ref> <remote oid>
-#
-# This sample shows how to prevent push of commits where the log message starts
-# with "WIP" (work in progress).
-set -eo pipefail
+# TODO: must check if the rev exists in the given branch
+if git rev-parse --verify \$REV_TO_PUSH >/dev/null 2>&1; then
+  true
+else
+  echo "Revision \$REV_TO_PUSH not exists, abort."
+  exit 112
+fi
+# push the specificed branch and rev to the CI server first
+git push ci-at-$CI_SERVER "\$BRANCH_TO_PUSH"
 
-remote="\$1"
-url="\$2"
+# now switch to the CI branch and
+# update the timestamp, then push to the CI
+# server to trigger the build
 
-if [[ "\$remote" = "cd-at-"* ]]; then
-declare -A RELATED_CI_SERVERS
-######AppendAssociativeCIServerFollowingThisLine######
-RELATED_CI_SERVERS["$CD_SERVER"]="$CI_SERVER"
+: "\${CURRENT_BRANCH:=\$(git branch --show-current)}"
+[ -z "\${CURRENT_BRANCH}" ] && CURRENT_BRANCH="\$BRANCH_TO_PUSH"
 
-target_branch="main"
+git checkout ci-branch-for-$CI_SERVER
+
+echo "\$(date +%Y%m%d%H%M%S)" > $GIT_REPO_PATH/.timestamp.push.to.ci.$CI_SERVER
+echo "\$BRANCH_TO_PUSH" > $GIT_REPO_PATH/.branch.push.to.ci.$CI_SERVER
+echo "\$REV_TO_PUSH" > $GIT_REPO_PATH/.revision.push.to.ci.$CI_SERVER
+
+git add $GIT_REPO_PATH/.timestamp.push.to.ci.$CI_SERVER
+git add $GIT_REPO_PATH/.branch.push.to.ci.$CI_SERVER
+git add $GIT_REPO_PATH/.revision.push.to.ci.$CI_SERVER
+
+git commit -m "update timestamp, branch and revision to push and trigger CI for $CI_SERVER"
+
+# that would trigger the CI build
+git push ci-at-$CI_SERVER ci-branch-for-$CI_SERVER
+
+git checkout \$CURRENT_BRANCH
+_PUSH_TO_CI_SCRIPT
+chmod 755 $GIT_REPO_PATH/.poormanscicd/push-to-ci-$CI_SERVER.sh
+
+done_banner "Setup local development environment" "generate push-to-ci script"
+#+end_src
+
+- generate =push-to-cd.sh= under the given =git= repository if CD is specificed ::
+
+#+begin_src  bash :tangle scripts/setup-cicd-local.sh :no-expand
+begin_banner "Setup local development environment" "generate push-to-cd script"
+
+if [ -n "$CD_SERVER" ]; then
+cat << _PUSH_TO_CD_SCRIPT > $GIT_REPO_PATH/.poormanscicd/push-to-cd-$CD_SERVER.sh
+#!/usr/bin/env bash
+
+# this script accept one optional parameters, the branch
+# to push to the CI server for build
+# If no optional parameter given, defaul value will be used
+
+: "\${BRANCH_TO_PUSH:=main}"
+
+[ -n "\$1" ] && BRANCH_TO_PUSH="\$1"
+
+: "\${REV_TO_PUSH:=\$(git rev-parse \$BRANCH_TO_PUSH)}"
+
+[ -n "\$2" ] && REV_TO_PUSH="\$2"
+
+if git rev-parse --verify \$BRANCH_TO_PUSH >/dev/null 2>&1; then
+  true
+else
+  echo "branch \$BRANCH_TO_PUSH not exists, abort."
+  exit 112
+fi
+
+# TODO: must check if the rev exists in the given branch
+if git rev-parse --verify \$REV_TO_PUSH >/dev/null 2>&1; then
+  true
+else
+  echo "Revision \$REV_TO_PUSH not exists, abort."
+  exit 112
+fi
+
+# there must exist a CI server for CD
+# afterall, deployment need the build artifact
+[ -z "$CI_SERVER" ] && my_exist "For CD to work, the CI_SERVER cannot be empty." 178
+
+# download the build artifact and then upload to the CD server
+# to let the deployment run
 ci_build_output="/home/$CI_USER/$PROJECT_NAME.build"
 cd_build_output="/home/$CD_USER/$PROJECT_NAME.build"
 cd_deploy_output="/home/$CD_USER/$PROJECT_NAME.deploy"
-while read -r localref localsha remoteref remotesha
-do
-  branch=\$(git rev-parse --symbolic --abbrev-ref "\$remoteref")
-  if [ -n "\$branch" ] && [ "\$target_branch" = "\$branch" ]; then
-    THE_CD_SERVER=\$(echo "\$url" | cut -d'@' -f2 | cut -d':' -f1)
-    THE_CI_SERVER=\${RELATED_CI_SERVERS["\$THE_CD_SERVER"]}
-    TEMP_CI_ARTIFACT=\$(mktemp -d -t ci-artifact-$PROJECT_NAME.xxxx)
-    if ssh ${CI_USER}@\$THE_CI_SERVER test -f \$ci_build_output/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz; then
-       scp $CI_USER@\$THE_CI_SERVER:\$ci_build_output/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz \$TEMP_CI_ARTIFACT/
-       scp \$TEMP_CI_ARTIFACT/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz $CD_USER@\$THE_CD_SERVER:\$cd_build_output/
-       rm -fr \$TEMP_CI_ARTIFACT
-       echo "build artifact is available as \$cd_build_output/ci-artifact-$PROJECT_NAME-\$localsha.tar.gz on the machine \$THE_CD_SERVER"
-    else
-       echo "cannot found the CI artifact for main branch revision \$localsha on the CI server \$THE_CI_SERVER."
-       echo "please run the command 'git push ci-at-\$THE_CI_SERVER \$branch' to build the project before you can deploy."
-       echo "abort deployment."
-       exit 111
-    fi
-  fi
-done
+TEMP_CI_ARTIFACT=\$(mktemp -d -t ci-artifact-$PROJECT_NAME.xxxx)
+if ssh ${CI_USER}@$CI_SERVER test -f \$ci_build_output/ci-artifact-$PROJECT_NAME-\$BRANCH_TO_PUSH-\$REV_TO_PUSH.tar.gz; then
+   scp $CI_USER@$CI_SERVER:\$ci_build_output/ci-artifact-$PROJECT_NAME-\$BRANCH_TO_PUSH-\$REV_TO_PUSH.tar.gz \$TEMP_CI_ARTIFACT/
+   scp \$TEMP_CI_ARTIFACT/ci-artifact-$PROJECT_NAME-\$BRANCH_TO_PUSH-\$REV_TO_PUSH.tar.gz $CD_USER@$CD_SERVER:\$cd_build_output/
+   rm -fr \$TEMP_CI_ARTIFACT
+   echo "build artifact is available as \$cd_build_output/ci-artifact-$PROJECT_NAME-\$BRANCH_TO_PUSH-\$REV_TO_PUSH.tar.gz on the machine $CD_SERVER"
+else
+   echo "cannot found the CI artifact for \$BRANCH_TO_PUSH branch revision \$REV_TO_PUSH on the CI server $CI_SERVER."
+   echo "please run the command 'push_to_ci_$CI_SERVER \$BRANCH_TO_PUSH <rev>' to build the project before you can deploy."
+   echo "abort deployment."
+   exit 111
 fi
-_EOFPrePush
-set -u
-fi
-chmod 755 $GIT_REPO_PATH/.git/hooks/pre-push
 
-done_banner "Setup local development environment" "add a pre-push hook to the git repo"
+# push the specificed branch and rev to the CD server first
+git push cd-at-$CD_SERVER "\$BRANCH_TO_PUSH"
+
+# now switch to the CD branch and
+# update the timestamp, then push to the CD
+# server to trigger the deployment
+
+: "\${CURRENT_BRANCH:=\$(git branch --show-current)}"
+[ -z "\${CURRENT_BRANCH}" ] && CURRENT_BRANCH="\$BRANCH_TO_PUSH"
+
+git checkout cd-branch-for-$CD_SERVER
+
+echo "\$(date +%Y%m%d%H%M%S)" > $GIT_REPO_PATH/.timestamp.push.to.cd.$CD_SERVER
+echo "\$BRANCH_TO_PUSH" > $GIT_REPO_PATH/.branch.push.to.cd.$CD_SERVER
+echo "\$REV_TO_PUSH" > $GIT_REPO_PATH/.revision.push.to.cd.$CD_SERVER
+
+git add $GIT_REPO_PATH/.timestamp.push.to.cd.$CD_SERVER
+git add $GIT_REPO_PATH/.branch.push.to.cd.$CD_SERVER
+git add $GIT_REPO_PATH/.revision.push.to.cd.$CD_SERVER
+
+git commit -m "update timestamp, branch and revision to push and trigger CD for $CD_SERVER"
+
+# that would trigger the CD deployment
+git push cd-at-$CD_SERVER cd-branch-for-$CD_SERVER
+
+git checkout \$CURRENT_BRANCH
+_PUSH_TO_CD_SCRIPT
+chmod 755 $GIT_REPO_PATH/.poormanscicd/push-to-cd-$CD_SERVER.sh
+
+done_banner "Setup local development environment" "generate push-to-cd script"
+fi
 #+end_src
 
 - generate =follow-ci-log.sh= under the given =git= repository ::
@@ -813,8 +962,8 @@ done_banner "Setup local development environment" "generate ci/cd script templat
 done_banner "Setup local development environment" "local"
 
 info "The local git repo $GIT_REPO_PATH has been setup for CI/CD"
-info "Whenever you want to do CI, just run 'git push ci-at-$CI_SERVER'"
-info "And CD, just run 'git push cd-at-$CD_SERVER'"
+info "Whenever you want to do CI, just run '.poormanscicd/push-to-ci-$CI_SERVER'"
+info "And CD, just run '.poormanscicd/push-to-cd-$CD_SERVER'"
 #+end_src
 
 **** Run me after tangle
@@ -834,7 +983,9 @@ set -eou pipefail
 [ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
 
 cp scripts/setup-ci-server.sh $GIT_REPO_PATH/.poormanscicd/setup-ci-server-$CI_SERVER.sh
+cp scripts/unsetup-ci-server.sh $GIT_REPO_PATH/.poormanscicd/unsetup-ci-server-$CI_SERVER.sh
 cp scripts/setup-cd-server.sh $GIT_REPO_PATH/.poormanscicd/setup-cd-server-$CD_SERVER.sh
+cp scripts/unsetup-cd-server.sh $GIT_REPO_PATH/.poormanscicd/unsetup-cd-server-$CD_SERVER.sh
 cp scripts/setup-cicd-local.sh $GIT_REPO_PATH/.poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
 
 #git -C "$GIT_REPO_PATH" add .poormanscicd/setup-ci-server-$CI_SERVER.sh
