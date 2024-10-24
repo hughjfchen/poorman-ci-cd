@@ -103,6 +103,7 @@ ERROR=2
 FATAL=3
 DEBUG=4
 DEFAULT_LOG_LEVEL=${ERROR}
+[ -n "${LOG_LEVEL-}" ] && DEFAULT_LOG_LEVEL=${LOG_LEVEL}
 
 my_exit () {
     echo "$(date +"%Y-%m-%d %H:%M:%S") - EXIT: - $1"
@@ -250,8 +251,23 @@ null_output () {
 Following is the settings shared by other sections
 #+NAME: Common-setting.sh
 #+begin_src bash :tangle no
+[ -n "${MY_PROJECT_NAME-}" ] && PROJECT_NAME="${MY_PROJECT_NAME}"
+[ -n "${MY_GIT_REPO_PATH-}" ] && GIT_REPO_PATH="${MY_GIT_REPO_PATH}"
 [ -z $PROJECT_NAME ] && my_exit "PROJECT_NAME cannot be empty" 2
 [ -z $GIT_REPO_PATH ] && my_exit "GIT_REPO_PATH cannot be empty" 2
+
+#+end_src
+
+Following is the embedded settings shared by other sections
+#+NAME: Common-setting-embedded.sh
+#+begin_src bash :tangle no
+: "\${PROJECT_NAME:=$PROJECT_NAME}"
+: "\${GIT_REPO_PATH:=$GIT_REPO_PATH}"
+
+[ -n "\${MY_PROJECT_NAME-}" ] && PROJECT_NAME="\${MY_PROJECT_NAME}"
+[ -n "\${MY_GIT_REPO_PATH-}" ] && GIT_REPO_PATH="\${MY_GIT_REPO_PATH}"
+[ -z \$PROJECT_NAME ] && my_exit "PROJECT_NAME cannot be empty" 2
+[ -z \$GIT_REPO_PATH ] && my_exit "GIT_REPO_PATH cannot be empty" 2
 
 #+end_src
 
@@ -274,6 +290,7 @@ ERROR=2
 FATAL=3
 DEBUG=4
 DEFAULT_LOG_LEVEL=\${ERROR}
+[ -n "\${LOG_LEVEL-}" ] && DEFAULT_LOG_LEVEL=\${LOG_LEVEL}
 
 my_exit () {
     echo "\$(date +"%Y-%m-%d %H:%M:%S") - EXIT: - \$1"
@@ -435,6 +452,7 @@ Add following to the begining of the script to kick off a =shell script= :
 
 <<common-setting.sh>>
 
+[ -n "${MY_CI_SERVER-}" ] && CI_SERVER="${MY_CI_SERVER}"
 [ -z $CI_SERVER ] && my_exit "CI_SERVER cannot be empty" 2
 
 init_with_root_or_sudo
@@ -443,6 +461,8 @@ begin_banner "Setup CI server" "$CI_SERVER"
 
 : ${CI_USER:=${PROJECT_NAME}ci}
 : ${CI_PASSWORD:="Passw0rd"}
+[ -n "${MY_CI_USER-}" ] && CI_USER="${MY_CI_USER}"
+[ -n "${MY_CI_PASSWORD-}" ] && CI_PASSWORD="${MY_CI_PASSWORD}"
 #+end_src
 
 - create a CI user ::
@@ -545,8 +565,8 @@ do
     nohup "\$to_build_branch_working_tree"/.poormanscicd/ci-$CI_SERVER.sh "\$to_build_branch_working_tree" "\$to_build_rev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$to_build_branch-\$to_build_rev.tar.gz > "\$build_output"/ci.log 2>&1 &
     info "CI has been kicked off on the CI server $CI_SERVER."
     info "It will build the branch \$to_build_branch with rev \$to_build_rev"
-    info "To follow the CI output, run $GIT_REPO_PATH/.poormanscicd/follow-ci-log-$CI_SERVER.sh on your local machine."
-    info "To view the CI output, run $GIT_REPO_PATH/.poormanscicd/view-ci-log-$CI_SERVER.sh on your local machine."
+    info "To follow the CI output, run '.poormanscicd/follow-ci-log-$CI_SERVER.sh' under your project GIT repository direcotry on your local machine."
+    info "To view the CI output, run '.poormanscicd/view-ci-log-$CI_SERVER.sh' under your project GIT repository direcotry on your local machine."
   fi
 done
 _EOFPostReceive
@@ -594,6 +614,7 @@ Add following to the begining of the script:
 
 <<common-setting.sh>>
 
+[ -n "${MY_CD_SERVER-}" ] && CD_SERVER="${MY_CD_SERVER}"
 [ -z $CD_SERVER ] && my_exit "CD_SERVER cannot be empty" 2
 
 init_with_root_or_sudo
@@ -602,6 +623,8 @@ begin_banner "Setup CD server" "$CD_SERVER"
 
 : ${CD_USER:=${PROJECT_NAME}cd}
 : ${CD_PASSWORD:="Passw0rd"}
+[ -n "${MY_CD_USER-}" ] && CD_USER="${MY_CD_USER}"
+[ -n "${MY_CD_PASSWORD-}" ] && CD_PASSWORD="${MY_CD_PASSWORD}"
 #+end_src
 
 This part is optional.
@@ -696,8 +719,8 @@ do
     nohup "\$to_deploy_branch_working_tree"/.poormanscicd/cd-$CD_SERVER.sh "\$to_deploy_branch_working_tree" "\$to_deploy_rev" "\$build_output"/ci-artifact-$PROJECT_NAME-\$to_deploy_branch-\$to_deploy_rev.tar.gz > "\$deploy_output"/cd.log 2>&1 &
     info "CD has been kicked off on the CD server $CD_SERVER."
     info "It will deploy the branch \$to_deploy_branch with rev \$to_deploy_rev"
-    info "To follow the CD output, run $GIT_REPO_PATH/.poormanscicd/follow-cd-log-$CD_SERVER.sh on your local machine."
-    info "To view the CD output, run $GIT_REPO_PATH/.poormanscicd/view-cd-log-$CD_SERVER.sh on your local machine."
+    info "To follow the CD output, run '.poormanscicd/follow-cd-log-$CD_SERVER.sh' under your project GIT repository direcotry on your local machine."
+    info "To view the CD output, run '.poormanscicd/view-cd-log-$CD_SERVER.sh' under your project GIT repository direcotry on your local machine."
   fi
 done
 _EOFPostReceive
@@ -751,6 +774,8 @@ Add following to the begining of the script:
 
 <<common-setting.sh>>
 
+[ -n "${MY_CI_SERVER-}" ] && CI_SERVER="${MY_CI_SERVER}"
+[ -n "${MY_CD_SERVER-}" ] && CD_SERVER="${MY_CD_SERVER}"
 [ -z $CI_SERVER ] && my_exit "CI_SERVER cannot be empty" 2
 [ -z $CD_SERVER ] && my_exit "CD_SERVER cannot be empty" 2
 
@@ -760,6 +785,20 @@ begin_banner "Setup local development environment" "local"
 : ${CI_PASSWORD:="Passw0rd"}
 : ${CD_USER:=${PROJECT_NAME}cd}
 : ${CD_PASSWORD:="Passw0rd"}
+[ -n "${MY_CI_USER-}" ] && CI_USER="${MY_CI_USER}"
+[ -n "${MY_CI_PASSWORD-}" ] && CI_PASSWORD="${MY_CI_PASSWORD}"
+[ -n "${MY_CD_USER-}" ] && CD_USER="${MY_CD_USER}"
+[ -n "${MY_CD_PASSWORD-}" ] && CD_PASSWORD="${MY_CD_PASSWORD}"
+
+if [ -d "${GIT_REPO_PATH}" ]; then
+  true
+else
+  error "The project git repository located under $GIT_REPO_PATH not exist."
+  error "Maybe you're working on another machine instead of the original one."
+  error "In that case, please run following command under the project git repository directory"
+  error "MY_GIT_REPO_PATH=<absolute path to the project git repo> .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh"
+  my_exit "Abort." 1
+fi
 #+end_src
 
 - generate a =ssh= key for the dedicated user accessing to the CI/CD machines with following command ::
@@ -885,6 +924,17 @@ begin_banner "Setup local development environment" "generate push-to-ci script"
 cat << _PUSH_TO_CI_SCRIPT > $GIT_REPO_PATH/.poormanscicd/push-to-ci-$CI_SERVER.sh
 #!/usr/bin/env bash
 <<common-embedded.sh>>
+<<common-setting-embedded.sh>>
+
+if [ -d "\${GIT_REPO_PATH}" ]; then
+  true
+else
+  error "The project git repository located under \$GIT_REPO_PATH not exist."
+  error "Maybe you're working on another machine instead of the original one."
+  error "In that case, please run following command under the project git repository directory"
+  error "MY_GIT_REPO_PATH=<absolute path to the project git repo> .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh"
+  my_exit "Abort." 1
+fi
 
 # this script accept one optional parameters, the branch
 # to push to the CI server for build
@@ -963,6 +1013,17 @@ if [ -n "$CD_SERVER" ]; then
 cat << _PUSH_TO_CD_SCRIPT > $GIT_REPO_PATH/.poormanscicd/push-to-cd-$CD_SERVER.sh
 #!/usr/bin/env bash
 <<common-embedded.sh>>
+<<common-setting-embedded.sh>>
+
+if [ -d "${GIT_REPO_PATH}" ]; then
+  true
+else
+  error "The project git repository located under $GIT_REPO_PATH not exist."
+  error "Maybe you're working on another machine instead of the original one."
+  error "In that case, please run following command under the project git repository directory"
+  error "MY_GIT_REPO_PATH=<absolute path to the project git repo> .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh"
+  my_exit "Abort." 1
+fi
 
 # this script accept one optional parameters, the branch
 # to push to the CI server for build
@@ -1125,6 +1186,8 @@ cat << _CI_TEMPLATE_SCRIPT > $GIT_REPO_PATH/.poormanscicd/ci-$CI_SERVER.sh
 : "\${BUILD_TARBALL:=ci-artifact-$PROJECT_NAME-\$GIT_REV.tar.gz}"
 [ -n "\${3-}" ] && BUILD_TARBALL="\$3"
 
+[ -f "\${BUILD_TARBALL}" ] && info "build artifact \$BUILD_TARBALL already exist, no need to build it again. bye now." && exit 0
+
 ######## Put the CI commands below ######
 info "Please add your own CI commands in the $GIT_REPO_PATH/.poormanscicd/ci-$CI_SERVER.sh"
 
@@ -1151,6 +1214,8 @@ cat << _CD_TEMPLATE_SCRIPT > $GIT_REPO_PATH/.poormanscicd/cd-$CD_SERVER.sh
 
 : "\${BUILD_TARBALL:=ci-artifact-$PROJECT_NAME-\$GIT_REV.tar.gz}"
 [ -n "\${3-}" ] && BUILD_TARBALL="\$3"
+
+[ -f "\${BUILD_TARBALL}" ] || my_exit "build artifact \$BUILD_TARBALL not exist, cannot continue. abort now." 1
 
 ######## Put the CD commands below ######
 info "Please add your own CD commands in the $GIT_REPO_PATH/.poormanscicd/cd-$CD_SERVER.sh"
