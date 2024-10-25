@@ -1235,30 +1235,39 @@ info "Whenever you want to do CI, just run '$GIT_REPO_PATH/.poormanscicd/push-to
 info "And CD, just run '$GIT_REPO_PATH/.poormanscicd/push-to-cd-$CD_SERVER.sh'"
 #+end_src
 
-**** Run me after tangle
+**** Run me
 :PROPERTIES:
 :header-args+: :var CI_SERVER=tbl-input-parameters[7,2]
 :header-args+: :var CD_SERVER=tbl-input-parameters[9,2]
 :END:
 
-Remember to run me with C -c C - c after tangling the files:
+Remember to run me with C -c C - c:
 
-#+begin_src bash :shebang #!/usr/bin/env bash :tangle no
-set -eou pipefail
+#+begin_src bash :shebang #!/usr/bin/env zsh :var tangled_files=(org-babel-tangle) :tangle no :noweb yes
+<<common.sh>>
+<<common-setting.sh>>
 
 [ -z $CI_SERVER ] && echo "CI_SERVER cannot be empty" && exit 2
 [ -z $CD_SERVER ] && echo "CD_SERVER cannot be empty" && exit 2
 
 [ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
 
-cp scripts/setup-ci-server.sh $GIT_REPO_PATH/.poormanscicd/setup-ci-server-$CI_SERVER.sh
-cp scripts/unsetup-ci-server.sh $GIT_REPO_PATH/.poormanscicd/unsetup-ci-server-$CI_SERVER.sh
-cp scripts/setup-cd-server.sh $GIT_REPO_PATH/.poormanscicd/setup-cd-server-$CD_SERVER.sh
-cp scripts/unsetup-cd-server.sh $GIT_REPO_PATH/.poormanscicd/unsetup-cd-server-$CD_SERVER.sh
-cp scripts/setup-cicd-local.sh $GIT_REPO_PATH/.poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
+for tangled_file in $tangled_files
+do
+    case "$(basename $tangled_file)" in
+      "setup-ci-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-ci-server-$CI_SERVER.sh ;;
+      "unsetup-ci-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/unsetup-ci-server-$CI_SERVER.sh ;;
+      "setup-cd-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-cd-server-$CD_SERVER.sh ;;
+      "unsetup-cd-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/unsetup-cd-server-$CD_SERVER.sh ;;
+      "setup-cicd-local.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh ;;
+      *) my_exit "unexpected tangled file name: $tangled_file, abort" 1 ;;
+    esac
+done
 
 #git -C "$GIT_REPO_PATH" add .poormanscicd/setup-ci-server-$CI_SERVER.sh
+#git -C "$GIT_REPO_PATH" add .poormanscicd/unsetup-ci-server-$CI_SERVER.sh
 #git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cd-server-$CD_SERVER.sh
+#git -C "$GIT_REPO_PATH" add .poormanscicd/unsetup-cd-server-$CD_SERVER.sh
 #git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
 
 #git -C "$GIT_REPO_PATH" commit -m "add CI on $CI_SERVER and CD on $CD_SERVER support."
