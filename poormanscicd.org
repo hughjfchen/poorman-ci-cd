@@ -905,7 +905,15 @@ git -C "$GIT_REPO_PATH" remote add cd-at-$CD_SERVER ssh://$CD_USER@$CD_SERVER:/h
 
 git -C "$GIT_REPO_PATH" rev-parse --verify ci-branch-for-$CI_SERVER >/dev/null 2>&1 || git branch ci-branch-for-$CI_SERVER >/dev/null 2>&1
 
+if git ls-remote --exit-code --heads ci-at-$CI_SERVER ci-branch-for-$CI_SERVER >/dev/null 2>&1; then
+    git -C "$GIT_REPO_PATH" pull ci-at-$CI_SERVER refs/heads/ci-branch-for-$CI_SERVER:refs/heads/ci-branch-for-$CI_SERVER >/dev/null 2>&1
+fi
+
 git -C "$GIT_REPO_PATH" rev-parse --verify cd-branch-for-$CD_SERVER >/dev/null 2>&1 || git branch cd-branch-for-$CD_SERVER >/dev/null 2>&1
+
+if git ls-remote --exit-code --heads cd-at-$CD_SERVER cd-branch-for-$CD_SERVER >/dev/null 2>&1; then
+    git -C "$GIT_REPO_PATH" pull cd-at-$CD_SERVER refs/heads/cd-branch-for-$CD_SERVER:refs/heads/cd-branch-for-$CD_SERVER >/dev/null 2>&1
+fi
 
 [ -d $GIT_REPO_PATH/.poormanscicd ] || mkdir -p $GIT_REPO_PATH/.poormanscicd
 
@@ -971,6 +979,9 @@ done_banner "push to CI" "push branch \$BRANCH_TO_PUSH"
 [ -z "\${CURRENT_BRANCH}" ] && CURRENT_BRANCH="\$BRANCH_TO_PUSH"
 
 git -C "$GIT_REPO_PATH" checkout ci-branch-for-$CI_SERVER >/dev/null 2>&1
+
+# pull it first
+git -C "$GIT_REPO_PATH" pull ci-at-$CI_SERVER refs/heads/ci-branch-for-$CI_SERVER:refs/heads/ci-branch-for-$CI_SERVER >/dev/null 2>&1
 
 echo "\$(date +%Y%m%d%H%M%S)" > $GIT_REPO_PATH/.timestamp.push.to.ci.$CI_SERVER
 echo "\$BRANCH_TO_PUSH" > $GIT_REPO_PATH/.branch.push.to.ci.$CI_SERVER
@@ -1089,6 +1100,9 @@ done_banner "push to CD" "push branch \$BRANCH_TO_PUSH"
 [ -z "\${CURRENT_BRANCH}" ] && CURRENT_BRANCH="\$BRANCH_TO_PUSH"
 
 git -C "$GIT_REPO_PATH" checkout cd-branch-for-$CD_SERVER >/dev/null 2>&1
+
+# pull it first
+git -C "$GIT_REPO_PATH" pull cd-at-$CD_SERVER refs/heads/cd-branch-for-$CD_SERVER:refs/heads/cd-branch-for-$CD_SERVER >/dev/null 2>&1
 
 echo "\$(date +%Y%m%d%H%M%S)" > $GIT_REPO_PATH/.timestamp.push.to.cd.$CD_SERVER
 echo "\$BRANCH_TO_PUSH" > $GIT_REPO_PATH/.branch.push.to.cd.$CD_SERVER
