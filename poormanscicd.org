@@ -842,7 +842,6 @@ Host $CI_SERVER
   StrictHostKeyChecking accept-new
   User $CI_USER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
-  IdentitiesOnly yes
 _SSH_CONFIG_FOR_CI
 }
 function add_CD_to_ssh_config() {
@@ -852,7 +851,6 @@ Host $CD_SERVER
   StrictHostKeyChecking accept-new
   User $CD_USER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
-  IdentitiesOnly yes
 _SSH_CONFIG_FOR_CD
 }
 
@@ -863,7 +861,6 @@ Host $CI_SERVER
   StrictHostKeyChecking accept-new
   User $CI_USER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CI_at_$CI_SERVER
-  IdentitiesOnly yes
 _SSH_CONFIG_FOR_CI
 }
 function append_CD_to_ssh_config () {
@@ -873,7 +870,6 @@ Host $CD_SERVER
   StrictHostKeyChecking accept-new
   User $CD_USER
   IdentityFile ~/.ssh/id_rsa.${PROJECT_NAME}_CD_at_$CD_SERVER
-  IdentitiesOnly yes
 _SSH_CONFIG_FOR_CD
 }
 
