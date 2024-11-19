@@ -940,6 +940,16 @@ else
   my_exit "Abort." 1
 fi
 
+if git -C "$GIT_REPO_PATH" rev-parse --verify ci-branch-for-$CI_SERVER >/dev/null 2>&1; then
+  true
+else
+  error "branch ci-branch-for-$CI_SERVER under git repo $GIT_REPO_PATH not exists."
+  error "Maybe you're working on another machine instead of the original one."
+  error "In that case, please run following command under the project git repository directory"
+  error "MY_GIT_REPO_PATH=<absolute path to the project git repo> .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh"
+  my_exit "Abort." 113
+fi
+
 # this script accept one optional parameters, the branch
 # to push to the CI server for build
 # If no optional parameter given, defaul value will be used
@@ -955,7 +965,7 @@ fi
 if git -C "$GIT_REPO_PATH" rev-parse --verify \$BRANCH_TO_PUSH >/dev/null 2>&1; then
   true
 else
-  my_exit "branch \$BRANCH_TO_PUSH not exists, abort." 113
+  my_exit "branch \$BRANCH_TO_PUSH under git repo \$GIT_REPO_PATH not exists, abort." 113
 fi
 
 # must check if the rev exists in the given branch
@@ -1032,6 +1042,16 @@ else
   my_exit "Abort." 1
 fi
 
+if git -C "$GIT_REPO_PATH" rev-parse --verify cd-branch-for-$CD_SERVER >/dev/null 2>&1; then
+  true
+else
+  error "branch cd-branch-for-$CD_SERVER under git repo $GIT_REPO_PATH not exists."
+  error "Maybe you're working on another machine instead of the original one."
+  error "In that case, please run following command under the project git repository directory"
+  error "MY_GIT_REPO_PATH=<absolute path to the project git repo> .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh"
+  my_exit "Abort." 113
+fi
+
 # this script accept one optional parameters, the branch
 # to push to the CI server for build
 # If no optional parameter given, defaul value will be used
@@ -1047,7 +1067,7 @@ fi
 if git -C "$GIT_REPO_PATH" rev-parse --verify \$BRANCH_TO_PUSH >/dev/null 2>&1; then
   true
 else
-  my_exit "branch \$BRANCH_TO_PUSH not exists, abort." 113
+  my_exit "branch \$BRANCH_TO_PUSH under git repo "$GIT_REPO_PATH" not exists, abort." 113
 fi
 
 # must check if the rev exists in the given branch
