@@ -1394,22 +1394,22 @@ Remember to run me with C -c C - c:
 for tangled_file in $tangled_files
 do
     case "$(basename $tangled_file)" in
-      "setup-ci-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-ci-server-$CI_SERVER.sh ;;
-      "unsetup-ci-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/unsetup-ci-server-$CI_SERVER.sh ;;
-      "setup-cd-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-cd-server-$CD_SERVER.sh ;;
-      "unsetup-cd-server.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/unsetup-cd-server-$CD_SERVER.sh ;;
-      "setup-cicd-local.sh") cp "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh ;;
+      "setup-ci-server.sh") mv "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-ci-server-$CI_SERVER.sh ;;
+      "unsetup-ci-server.sh") mv "$tangled_file" $GIT_REPO_PATH/.poormanscicd/unsetup-ci-server-$CI_SERVER.sh ;;
+      "setup-cd-server.sh") mv "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-cd-server-$CD_SERVER.sh ;;
+      "unsetup-cd-server.sh") mv "$tangled_file" $GIT_REPO_PATH/.poormanscicd/unsetup-cd-server-$CD_SERVER.sh ;;
+      "setup-cicd-local.sh") mv "$tangled_file" $GIT_REPO_PATH/.poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh ;;
       *) my_exit "unexpected tangled file name: $tangled_file, abort" 1 ;;
     esac
 done
 
-#git -C "$GIT_REPO_PATH" add .poormanscicd/setup-ci-server-$CI_SERVER.sh
-#git -C "$GIT_REPO_PATH" add .poormanscicd/unsetup-ci-server-$CI_SERVER.sh
-#git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cd-server-$CD_SERVER.sh
-#git -C "$GIT_REPO_PATH" add .poormanscicd/unsetup-cd-server-$CD_SERVER.sh
-#git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
+git -C "$GIT_REPO_PATH" add .poormanscicd/setup-ci-server-$CI_SERVER.sh
+git -C "$GIT_REPO_PATH" add .poormanscicd/unsetup-ci-server-$CI_SERVER.sh
+git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cd-server-$CD_SERVER.sh
+git -C "$GIT_REPO_PATH" add .poormanscicd/unsetup-cd-server-$CD_SERVER.sh
+git -C "$GIT_REPO_PATH" add .poormanscicd/setup-cicd-local-$CI_SERVER-$CD_SERVER.sh
 
-#git -C "$GIT_REPO_PATH" commit -m "add CI on $CI_SERVER and CD on $CD_SERVER support."
+git -C "$GIT_REPO_PATH" commit -m "add CI on $CI_SERVER and CD on $CD_SERVER support."
 #+end_src
 
 #+RESULTS:
